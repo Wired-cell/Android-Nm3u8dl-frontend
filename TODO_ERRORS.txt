@@ -37,6 +37,14 @@ USER-REPORTED ERRORS
       - Signed URL query parameters are suppressed in notification text.
     Status: source changes committed; CI build and device background/notification test pending. Verify notification updates, Stop action, completion notification, and return to app log on device.
 
+[ ] 5. False completion: notification said "Download complete. Published 0 file(s)" although logs stopped after stream selection and no media appeared.
+    Root cause confirmed in app code: DownloadService treated process exit code 0 as success even when the output directory contained no media files; publishDownloads returned 0 for an empty directory.
+    Changes committed:
+      - Exit code 0 is no longer sufficient: require at least one non-empty recognized media file before showing success.
+      - Metadata/empty folders are not published as media; empty output now produces an explicit failure diagnostic with output path and discovered file listing.
+      - Pass an explicit writable cache subdirectory as --tmp-dir so segment staging does not depend on implicit runtime temp resolution.
+    Status: source changes committed; CI and device retest pending. The user's log proves manifest parsing and stream selection only; it does not prove segment requests began.
+
 OTHER FIXES / REGRESSION GUARDS
 
 [ ] Keep the ARM64 N_m3u8DL-RE engine executable from nativeLibraryDir.
