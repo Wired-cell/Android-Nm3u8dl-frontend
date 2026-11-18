@@ -69,31 +69,28 @@ class MainActivity : Activity() {
                 runOnUiThread { appendLog(probeOutput) }
                 // Android app data is mounted noexec on many devices. Execute these tools
                 // from nativeLibraryDir, where APK native libraries are extracted executable.
-                val ffmpeg = File(applicationInfo.nativeLibraryDir, "libffmpeg.so")
+                val ffmpeg = File(applicationInfo.nativeLibraryDir, "libffmpeg-launcher.so")
                 if (!ffmpeg.isFile || !ffmpeg.canExecute()) {
-                    throw IllegalStateException("ARM64 FFmpeg is missing or not executable in nativeLibraryDir: ${ffmpeg.absolutePath}")
+                    throw IllegalStateException("ARM64 FFmpeg launcher is missing or not executable: ${ffmpeg.absolutePath}")
                 }
                 val ffmpegBuilder = ProcessBuilder(ffmpeg.absolutePath, "-version")
                     .directory(nativeDir).redirectErrorStream(true)
-                // FFmpeg is a dynamically linked Android executable. Its NDK C++
-                // runtime is extracted beside it in nativeLibraryDir; explicitly
-                // expose that directory to bionic for this preflight process too.
-                ffmpegBuilder.environment()["LD_LIBRARY_PATH"] =
-                    "${applicationInfo.nativeLibraryDir}:${nativeDir.absolutePath}"
+                // The launcher deliberately resets LD_LIBRARY_PATH to nativeLibraryDir
+                // before execing FFmpeg, preventing our private OpenSSL 3 from
+                // shadowing Android platform libraries such as libcrypto/libsqlite.
                 val ffmpegCheck = ffmpegBuilder.start()
                 val ffmpegVersion = ffmpegCheck.inputStream.bufferedReader().readLine().orEmpty()
                 val ffmpegCode = ffmpegCheck.waitFor()
                 if (ffmpegCode != 0 || !ffmpegVersion.contains("ffmpeg", ignoreCase = true)) {
                     throw IllegalStateException("FFmpeg launch test failed (code $ffmpegCode): $ffmpegVersion")
                 }
-                val mp4decrypt = File(applicationInfo.nativeLibraryDir, "libmp4decrypt.so")
+                val mp4decrypt = File(applicationInfo.nativeLibraryDir, "libmp4decrypt-launcher.so")
                 if (!mp4decrypt.isFile || !mp4decrypt.canExecute()) {
                     throw IllegalStateException("ARM64 mp4decrypt is missing or not executable in nativeLibraryDir: ${mp4decrypt.absolutePath}")
                 }
                 val decryptBuilder = ProcessBuilder(mp4decrypt.absolutePath, "--help")
                     .directory(nativeDir).redirectErrorStream(true)
-                decryptBuilder.environment()["LD_LIBRARY_PATH"] =
-                    "${applicationInfo.nativeLibraryDir}:${nativeDir.absolutePath}"
+                // The launcher uses only nativeLibraryDir for the child executable.
                 val decryptCheck = decryptBuilder.start()
                 val decryptOutput = decryptCheck.inputStream.bufferedReader().readText()
                 val decryptCode = decryptCheck.waitFor()
@@ -293,8 +290,8 @@ class MainActivity : Activity() {
 
         downloadDir.deleteRecursively()
         downloadDir.mkdirs()
-        val ffmpeg = File(applicationInfo.nativeLibraryDir, "libffmpeg.so")
-        val mp4decrypt = File(applicationInfo.nativeLibraryDir, "libmp4decrypt.so")
+        val ffmpeg = File(applicationInfo.nativeLibraryDir, "libffmpeg-launcher.so")
+        val mp4decrypt = File(applicationInfo.nativeLibraryDir, "libmp4decrypt-launcher.so")
         if (!ffmpeg.canExecute() || !mp4decrypt.canExecute()) {
             appendLog("FFmpeg or mp4decrypt is not executable from Android nativeLibraryDir. Reinstall the latest APK.")
             return
