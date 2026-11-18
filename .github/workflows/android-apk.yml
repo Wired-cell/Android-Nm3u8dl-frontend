@@ -115,8 +115,18 @@ jobs:
             exit 1
           fi
           install -m 755 "${FFMPEG}" app/src/main/jniLibs/arm64-v8a/libffmpeg.so
+          # FFmpegBin's Android ARM64 executable is dynamically linked against
+          # libc++_shared.so. Ship the matching NDK runtime beside it so bionic
+          # can resolve the dependency when ProcessBuilder launches the binary.
+          NDK="$(find "$ANDROID_HOME/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          CXX_RUNTIME="$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so"
+          test -s "$CXX_RUNTIME"
+          install -m 755 "$CXX_RUNTIME" app/src/main/jniLibs/arm64-v8a/libc++_shared.so
           readelf -h app/src/main/jniLibs/arm64-v8a/libffmpeg.so | grep -q 'AArch64'
-          ls -lh app/src/main/jniLibs/arm64-v8a/libffmpeg.so
+          readelf -d app/src/main/jniLibs/arm64-v8a/libffmpeg.so | grep -q 'libc++_shared.so'
+          readelf -h app/src/main/jniLibs/arm64-v8a/libc++_shared.so | grep -q 'AArch64'
+          readelf -d app/src/main/jniLibs/arm64-v8a/libc++_shared.so | grep -E 'SONAME.*libc\+\+_shared.so'
+          ls -lh app/src/main/jniLibs/arm64-v8a/libffmpeg.so app/src/main/jniLibs/arm64-v8a/libc++_shared.so
 
       - name: Build Bento4 mp4decrypt for Android ARM64
         shell: bash
@@ -153,7 +163,10 @@ jobs:
           readelf -h app/src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so | grep -E 'Class:|Machine:'
           readelf -h app/src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so | grep -q 'AArch64'
           test -x app/src/main/jniLibs/arm64-v8a/libffmpeg.so
+          test -s 'app/src/main/jniLibs/arm64-v8a/libc++_shared.so'
           readelf -h app/src/main/jniLibs/arm64-v8a/libffmpeg.so | grep -q 'AArch64'
+          readelf -h app/src/main/jniLibs/arm64-v8a/libc++_shared.so | grep -q 'AArch64'
+          readelf -d app/src/main/jniLibs/arm64-v8a/libffmpeg.so | grep -q 'libc++_shared.so'
           test -x app/src/main/jniLibs/arm64-v8a/libmp4decrypt.so
           readelf -h app/src/main/jniLibs/arm64-v8a/libmp4decrypt.so | grep -q 'AArch64'
 
@@ -171,6 +184,7 @@ jobs:
           unzip -l "${APK}" | grep 'assets/native/libcrypto.so'
           unzip -l "${APK}" | grep 'lib/arm64-v8a/libopenssl-probe.so'
           unzip -l "${APK}" | grep 'lib/arm64-v8a/libffmpeg.so'
+          unzip -l "${APK}" | grep 'lib/arm64-v8a/libc++_shared.so'
           unzip -l "${APK}" | grep 'lib/arm64-v8a/libmp4decrypt.so'
 
       - name: Upload APK
