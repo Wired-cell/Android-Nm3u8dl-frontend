@@ -58,6 +58,14 @@ USER-REPORTED ERRORS
       - APK verification and Gradle payload checks require the PTY runner.
     Status: implementation committed; CI build and Android device test pending. PTY output and segment-counter parsing must be verified on device before calling this resolved.
 
+[ ] 7. Android progress parser showed incorrect audio total (100) when Spectre.Console emitted a percent-based denominator.
+    Changes committed:
+      - Use selected stream metadata ("N Segments") as the authoritative per-track total, adding the DASH init segment.
+      - When Spectre reports a 0..100 denominator, scale the displayed completed count from the engine's percentage rather than reporting 0/100 segments.
+      - Added .github/workflows/diagnose-mpd.yml: manual Linux x64 reproduction using the exact upstream v0.6.0-beta engine, FFmpeg, Bento4 mp4decrypt, the same 240p video/audio selection, key, retries and HTTP timeout.
+      - The diagnostic workflow accepts only repository Actions secrets NM3U8_TEST_MPD_URL and NM3U8_TEST_KID_KEY; output is sanitized (MPD query strings and key material redacted) and only the sanitized log is retained for 3 days. No media output is uploaded.
+    Status: implementation committed; Android APK CI and a user-triggered protected-MPD reproduction are pending. The repeated stop at 29 segments remains unresolved until the diagnostic log identifies the failing request.
+
 OTHER FIXES / REGRESSION GUARDS
 
 [ ] Keep the ARM64 N_m3u8DL-RE engine executable from nativeLibraryDir.
