@@ -236,6 +236,18 @@ class MainActivity : Activity() {
             appendLog("Put the manifest URL in the URL field, not in Arguments.")
             return
         }
+        // Always override user-supplied audio selection so the best audio rendition is selected.
+        val effectiveArgs = userArgs.toMutableList()
+        var audioIndex = 0
+        while (audioIndex < effectiveArgs.size) {
+            if (effectiveArgs[audioIndex] == "-sa" || effectiveArgs[audioIndex] == "--select-audio") {
+                effectiveArgs.removeAt(audioIndex)
+                if (audioIndex < effectiveArgs.size) effectiveArgs.removeAt(audioIndex)
+            } else {
+                audioIndex++
+            }
+        }
+        effectiveArgs.addAll(listOf("-sa", "best"))
 
         downloadDir.deleteRecursively()
         downloadDir.mkdirs()
@@ -245,7 +257,7 @@ class MainActivity : Activity() {
             return
         }
         val args = mutableListOf(binary.absolutePath, url)
-        args.addAll(userArgs)
+        args.addAll(effectiveArgs)
         args.addAll(listOf("--save-dir", downloadDir.absolutePath, "--decryption-binary-path", mp4decrypt.absolutePath, "--no-log", "--ui-language", "en-US"))
 
         runButton.isEnabled = false
