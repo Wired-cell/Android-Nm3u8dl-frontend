@@ -1,0 +1,125 @@
+name: Diagnose protected MPD download
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mpd-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - name: Check required repository secrets
+        env:
+          MPD_URL: ${{ secrets.NM3U8_TEST_MPD_URL }}
+          KID_KEY: ${{ secrets.NM3U8_TEST_KID_KEY }}
+        run: |
+          if [ -z "$MPD_URL" ] || [ -z "$KID_KEY" ]; then
+            echo "::error::Add repository Actions secrets NM3U8_TEST_MPD_URL and NM3U8_TEST_KID_KEY before running this workflow."
+            exit 1
+          fi
+          echo "::add-mask::$MPD_URL"
+          echo "::add-mask::$KID_KEY"
+
+      - name: Install diagnostic dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg cmake ninja-build build-essential python3
+
+      - name: Download upstream Linux x64 engine
+        run: |
+          set -euo pipefail
+          mkdir -p engine-unpack
+          curl --fail --location --retry 3 \
+            https://github.com/nilaoda/N_m3u8DL-RE/releases/download/v0.6.0-beta/N_m3u8DL-RE_v0.6.0-beta_linux-x64_20260629.tar.gz \
+            -o /tmp/engine.tar.gz
+          tar -xzf /tmp/engine.tar.gz -C engine-unpack
+          ENGINE="$(find engine-unpack -type f -name N_m3u8DL-RE -print -quit)"
+          test -n "$ENGINE"
+          chmod +x "$ENGINE"
+          echo "ENGINE=$GITHUB_WORKSPACE/$ENGINE" >> "$GITHUB_ENV"
+
+      - name: Build Bento4 mp4decrypt
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/axiomatic-systems/Bento4.git bento4
+          cmake -S bento4 -B bento4/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_APPS=ON
+          cmake --build bento4/build --target mp4decrypt --parallel 2
+          MP4DECRYPT="$(find bento4/build -type f -name mp4decrypt -print -quit)"
+          test -n "$MP4DECRYPT"
+          chmod +x "$MP4DECRYPT"
+          echo "MP4DECRYPT=$GITHUB_WORKSPACE/$MP4DECRYPT" >> "$GITHUB_ENV"
+
+      - name: Run protected MPD reproduction with sanitized diagnostics
+        env:
+          MPD_URL: ${{ secrets.NM3U8_TEST_MPD_URL }}
+          KID_KEY: ${{ secrets.NM3U8_TEST_KID_KEY }}
+        run: |
+          set +x
+          echo "::add-mask::$MPD_URL"
+          echo "::add-mask::$KID_KEY"
+          mkdir -p diagnostic-output diagnostic-temp
+          python3 - <<'PY'
+          import os, re, subprocess, sys
+          engine = os.environ["ENGINE"]
+          mp4decrypt = os.environ["MP4DECRYPT"]
+          url = os.environ["MPD_URL"]
+          key = os.environ["KID_KEY"]
+          cmd = [
+              engine, url,
+              "--key", key,
+              "-sv", "res=^426x240:for=best",
+              "-sa", "best",
+              "--thread-count", "4",
+              "--download-retry-count", "5",
+              "--http-request-timeout", "45",
+              "--log-level", "DEBUG",
+              "--no-log",
+              "--disable-update-check",
+              "--ffmpeg-binary-path", "/usr/bin/ffmpeg",
+              "--decryption-binary-path", mp4decrypt,
+              "--save-dir", "diagnostic-output",
+              "--tmp-dir", "diagnostic-temp",
+          ]
+          print("Starting Linux x64 reproduction using the same upstream engine release and selected 240p video/audio tracks.", flush=True)
+          print("Secrets are masked; URL query strings and key material are redacted from captured output.", flush=True)
+          proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace", bufsize=1)
+          ansi = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+          url_re = re.compile(r"https?://[^\s\]<>\"']+")
+          query_re = re.compile(r"([?&](?:Signature|Policy|Key-Pair-Id|Expires|token|auth)=)[^&\s]+", re.I)
+          with open("diagnostic.log", "w", encoding="utf-8") as log:
+              for raw in proc.stdout:
+                  line = raw.replace(url, "[MPD_URL_REDACTED]").replace(key, "[KID_KEY_REDACTED]")
+                  line = ansi.sub("", line)
+                  line = url_re.sub(lambda m: re.sub(r"\?.*", "?[QUERY_REDACTED]", m.group(0)), line)
+                  line = query_re.sub(r"\1[REDACTED]", line)
+                  log.write(line)
+                  log.flush()
+                  print(line, end="", flush=True)
+              code = proc.wait()
+          print(f"Engine exit code: {code}", flush=True)
+          sys.exit(code)
+          PY
+
+      - name: Report output sizes and diagnostic files
+        if: always()
+        run: |
+          echo "Downloaded media/staging sizes:"
+          du -ah diagnostic-output diagnostic-temp 2>/dev/null | sort -h | tail -30 || true
+          echo "Largest files:"
+          find diagnostic-output diagnostic-temp -type f -printf '%s %p\n' 2>/dev/null | sort -nr | head -30 || true
+
+      - name: Upload sanitized diagnostic log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpd-download-diagnostic
+          path: diagnostic.log
+          if-no-files-found: ignore
+          retention-days: 3
