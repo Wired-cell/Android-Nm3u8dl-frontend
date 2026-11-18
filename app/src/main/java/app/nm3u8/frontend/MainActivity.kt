@@ -1,11 +1,15 @@
 package app.nm3u8.frontend
 
 import android.app.Activity
+import android.content.ContentValues
 import android.graphics.Typeface
+import android.net.Uri
 import android.os.Bundle
+import android.provider.MediaStore
 import android.text.InputType
 import android.text.method.PasswordTransformationMethod
 import android.view.Gravity
+import android.view.Window
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -18,29 +22,40 @@ class MainActivity : Activity() {
     private val executor = Executors.newSingleThreadExecutor()
     private var process: Process? = null
     private lateinit var urlInput: EditText
-    private lateinit var nameInput: EditText
-    private lateinit var headersInput: EditText
     private lateinit var keysInput: EditText
-    private lateinit var optionsInput: EditText
     private lateinit var output: TextView
     private lateinit var runButton: Button
     private lateinit var stopButton: Button
     private lateinit var nativeDir: File
+    private lateinit var downloadDir: File
+
+    private val bg = 0xFF282A36.toInt()
+    private val panel = 0xFF44475A.toInt()
+    private val fg = 0xFFF8F8F2.toInt()
+    private val muted = 0xFFBD93F9.toInt()
+    private val green = 0xFF50FA7B.toInt()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.statusBarColor = bg
+        window.navigationBarColor = bg
+        window.decorView.setSystemUiVisibility(0)
         nativeDir = File(filesDir, "native")
+        downloadDir = File(getExternalFilesDir(null), "download-staging/N_m3u8DL-RE")
         buildUi()
         executor.execute {
             try {
                 installNativePayload()
-                val binary = File(nativeDir, "N_m3u8DL-RE")
+                val binary = File(applicationInfo.nativeLibraryDir, "libN_m3u8DL-RE.so")
+                if (!binary.exists() || !binary.canExecute()) {
+                    throw IllegalStateException("ARM64 engine was not extracted as an executable native library: ${binary.absolutePath}")
+                }
                 val check = ProcessBuilder(binary.absolutePath, "--version")
                     .directory(nativeDir).redirectErrorStream(true).start()
                 val version = check.inputStream.bufferedReader().use { it.readText() }.trim()
                 val code = check.waitFor()
                 runOnUiThread {
-                    appendLog(if (code == 0) "Engine ready: $version" else "Engine returned exit code $code. Check bundled runtime files.")
+                    appendLog(if (code == 0) "ARM64 engine ready: $version" else "Engine returned exit code $code. Check bundled runtime files.")
                     runButton.isEnabled = code == 0
                 }
             } catch (e: Exception) {
@@ -53,7 +68,7 @@ class MainActivity : Activity() {
         val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(22), dp(20), dp(18))
-            setBackgroundColor(0xFFF5F6FA.toInt())
+            setBackgroundColor(bg)
         }
         val scroll = ScrollView(this)
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -64,29 +79,27 @@ class MainActivity : Activity() {
             text = "N_m3u8DL-RE"
             textSize = 28f
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(0xFF172033.toInt())
+            setTextColor(fg)
         })
         content.addView(TextView(this).apply {
-            text = "Android frontend • ARM64"
-            textSize = 14f
-            setTextColor(0xFF667085.toInt())
-            setPadding(0, dp(3), 0, dp(18))
+            text = "ANDROID • ARM64 • DRACULA"
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(muted)
+            setPadding(0, dp(3), 0, dp(20))
         })
 
-        urlInput = field(content, "Playlist URL (HLS / DASH / MSS)", "https://example.com/playlist.m3u8")
-        nameInput = field(content, "Output file name (optional)", "video")
-        headersInput = field(content, "HTTP headers (one per line)", "User-Agent: Mozilla/5.0\nReferer: https://example.com", true)
-        keysInput = field(content, "Decryption keys (one per line)", "KID:KEY or KEY — only keys you are authorized to use", true).apply {
+        urlInput = field(content, "MPD / playlist URL", "https://example.com/manifest.mpd")
+        keysInput = field(content, "Decryption keys (one per line)", "KID:KEY", true).apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             transformationMethod = PasswordTransformationMethod.getInstance()
         }
         content.addView(TextView(this).apply {
-            text = "Each line is passed as a separate --key argument. Supports KID:KEY pairs or a single KEY. Key values are hidden in this field and omitted from the app's command log."
-            textSize = 11f
-            setTextColor(0xFF667085.toInt())
-            setPadding(0, 0, 0, dp(8))
+            text = "Paste each legally obtained KID:KEY pair on its own line. HTTP headers are optional and are not required for a public MPD."
+            textSize = 12f
+            setTextColor(0xFFBFBFBF.toInt())
+            setPadding(0, dp(4), 0, dp(16))
         })
-        optionsInput = field(content, "Extra N_m3u8DL-RE options", "--auto-select -mt", true)
 
         val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         runButton = Button(this).apply {
@@ -107,23 +120,23 @@ class MainActivity : Activity() {
             text = "OUTPUT LOG"
             textSize = 12f
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(0xFF475467.toInt())
+            setTextColor(muted)
             setPadding(0, dp(20), 0, dp(8))
         })
         output = TextView(this).apply {
             text = "Preparing ARM64 engine…"
             textSize = 12f
             typeface = Typeface.MONOSPACE
-            setTextColor(0xFFE6EDF3.toInt())
+            setTextColor(fg)
             setPadding(dp(12), dp(12), dp(12), dp(12))
-            setBackgroundColor(0xFF172033.toInt())
+            setBackgroundColor(0xFF191A21.toInt())
             setTextIsSelectable(true)
         }
         content.addView(output, LinearLayout.LayoutParams(-1, dp(220)))
         content.addView(TextView(this).apply {
-            text = "Downloads are saved in this app's private Downloads folder. Use content you are authorized to access."
+            text = "Completed files are copied to the public Downloads/N_m3u8DL-RE folder."
             textSize = 12f
-            setTextColor(0xFF667085.toInt())
+            setTextColor(green)
             setPadding(0, dp(12), 0, dp(18))
         })
         setContentView(page)
@@ -134,11 +147,13 @@ class MainActivity : Activity() {
             text = label
             textSize = 13f
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(0xFF344054.toInt())
+            setTextColor(fg)
             setPadding(0, dp(8), 0, dp(6))
         })
         val edit = EditText(this).apply {
             textSize = 14f
+            setTextColor(fg)
+            setHintTextColor(0xFF9A9AAA.toInt())
             setSingleLine(!multiline)
             this.hint = hint
             if (multiline) {
@@ -147,39 +162,38 @@ class MainActivity : Activity() {
                 gravity = Gravity.TOP or Gravity.START
             }
             setPadding(dp(12), dp(10), dp(12), dp(10))
-            setBackgroundColor(0xFFFFFFFF.toInt())
+            setBackgroundColor(panel)
         }
-        parent.addView(edit, LinearLayout.LayoutParams(-1, if (multiline) dp(104) else dp(52)).apply { bottomMargin = dp(4) })
+        parent.addView(edit, LinearLayout.LayoutParams(-1, if (multiline) dp(112) else dp(56)).apply { bottomMargin = dp(4) })
         return edit
     }
 
     private fun startDownload() {
         val url = urlInput.text.toString().trim()
         if (!(url.startsWith("https://") || url.startsWith("http://"))) {
-            appendLog("Enter a valid http:// or https:// playlist URL.")
+            appendLog("Enter a valid http:// or https:// MPD / playlist URL.")
             return
         }
-        val binary = File(nativeDir, "N_m3u8DL-RE")
-        if (!binary.exists()) { appendLog("ARM64 engine is missing."); return }
+        val binary = File(applicationInfo.nativeLibraryDir, "libN_m3u8DL-RE.so")
+        if (!binary.exists() || !binary.canExecute()) {
+            appendLog("ARM64 engine is missing or not executable. Reinstall the latest APK.")
+            return
+        }
 
-        val args = mutableListOf(binary.absolutePath, url, "--save-dir", File(getExternalFilesDir(null), "Downloads").apply { mkdirs() }.absolutePath, "--ui-language", "en-US")
-        nameInput.text.toString().trim().takeIf { it.isNotEmpty() }?.let { args.addAll(listOf("--save-name", it)) }
-        headersInput.text.toString().lineSequence().map { it.trim() }.filter { it.contains(":") }.forEach {
-            args.add("-H"); args.add(it)
-        }
         val suppliedKeys = keysInput.text.toString().lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
-        suppliedKeys.forEach { key ->
-            if (key.any { it.isWhitespace() }) {
-                appendLog("Each key must be a single token. Use one KID:KEY or KEY value per line.")
-                return
-            }
-            args.add("--key")
-            args.add(key)
+        if (suppliedKeys.any { it.any(Char::isWhitespace) || it.count { c -> c == ':' } > 1 || it.startsWith(":") || it.endsWith(":") }) {
+            appendLog("Invalid key format. Enter one KID:KEY pair per line.")
+            return
         }
-        args.addAll(parseArguments(optionsInput.text.toString()))
+
+        downloadDir.deleteRecursively()
+        downloadDir.mkdirs()
+        val args = mutableListOf(binary.absolutePath, url, "--save-dir", downloadDir.absolutePath, "--ui-language", "en-US")
+        suppliedKeys.forEach { key -> args.add("--key"); args.add(key) }
+
         runButton.isEnabled = false
         stopButton.isEnabled = true
-        appendLog("\n> Download command started (decryption key values are not displayed).")
+        appendLog("\nStarting download… (key values are hidden)")
         executor.execute {
             try {
                 val builder = ProcessBuilder(args).directory(nativeDir).redirectErrorStream(true)
@@ -190,41 +204,60 @@ class MainActivity : Activity() {
                     lines.forEach { line -> runOnUiThread { appendLog(line) } }
                 }
                 val code = process!!.waitFor()
-                runOnUiThread { appendLog("Process finished (exit $code)."); runButton.isEnabled = true; stopButton.isEnabled = false; process = null }
+                if (code == 0) {
+                    val count = publishDownloads(downloadDir)
+                    runOnUiThread { appendLog("Finished. Published $count file(s) to Downloads/N_m3u8DL-RE.") }
+                } else {
+                    runOnUiThread { appendLog("Downloader exited with code $code. No files were published.") }
+                }
+                runOnUiThread { runButton.isEnabled = true; stopButton.isEnabled = false; process = null }
             } catch (e: Exception) {
-                runOnUiThread { appendLog("Run failed: ${e.message}"); runButton.isEnabled = true; stopButton.isEnabled = false }
+                runOnUiThread { appendLog("Run failed: ${e.message}"); runButton.isEnabled = true; stopButton.isEnabled = false; process = null }
             }
         }
     }
 
-    private fun parseArguments(input: String): List<String> {
-        val result = mutableListOf<String>()
-        val token = StringBuilder()
-        var quote: Char? = null
-        var escaped = false
-        for (c in input) {
-            if (escaped) { token.append(c); escaped = false; continue }
-            if (c == '\\' && quote != null) { escaped = true; continue }
-            if ((c == '"' || c == '\'') && (quote == null || quote == c)) {
-                quote = if (quote == null) c else null
-                continue
+    private fun publishDownloads(root: File): Int {
+        if (!root.exists()) return 0
+        var published = 0
+        val files = root.walkTopDown().filter { it.isFile }.toList()
+        for (file in files) {
+            val relativeParent = file.parentFile?.relativeTo(root)?.path?.takeIf { it.isNotEmpty() }
+            val folder = if (relativeParent == null) "Download/N_m3u8DL-RE/" else "Download/N_m3u8DL-RE/$relativeParent/"
+            val mime = when (file.extension.lowercase()) {
+                "mp4", "m4v" -> "video/mp4"
+                "mkv" -> "video/x-matroska"
+                "m4a" -> "audio/mp4"
+                "mp3" -> "audio/mpeg"
+                "vtt" -> "text/vtt"
+                "srt" -> "application/x-subrip"
+                else -> "application/octet-stream"
             }
-            if (c.isWhitespace() && quote == null) {
-                if (token.isNotEmpty()) { result.add(token.toString()); token.setLength(0) }
-            } else token.append(c)
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)
+                put(MediaStore.MediaColumns.MIME_TYPE, mime)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, folder)
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            val uri: Uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: throw IllegalStateException("Could not create Downloads entry for ${file.name}")
+            try {
+                contentResolver.openOutputStream(uri)?.use { out -> file.inputStream().use { input -> input.copyTo(out) } }
+                    ?: throw IllegalStateException("Could not write ${file.name} to Downloads")
+                val ready = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
+                contentResolver.update(uri, ready, null, null)
+                published++
+            } catch (e: Exception) {
+                contentResolver.delete(uri, null, null)
+                throw e
+            }
         }
-        if (token.isNotEmpty()) result.add(token.toString())
-        return result
+        return published
     }
 
     private fun installNativePayload() {
-        if (File(nativeDir, "N_m3u8DL-RE").exists()) return
         nativeDir.mkdirs()
         copyAssets("native", nativeDir)
-        val binary = File(nativeDir, "N_m3u8DL-RE")
-        if (!binary.exists()) throw IllegalStateException("APK does not contain the ARM64 N_m3u8DL-RE binary")
-        binary.setExecutable(true, true)
-        nativeDir.listFiles()?.filter { it.isFile && (it.name == "ffmpeg" || it.name == "mp4decrypt" || it.name == "shaka-packager") }?.forEach { it.setExecutable(true, true) }
     }
 
     private fun copyAssets(path: String, destination: File) {
@@ -238,7 +271,7 @@ class MainActivity : Activity() {
                 copyAssets(childPath, target)
             } else {
                 assets.open(childPath).use { input -> target.outputStream().use { output -> input.copyTo(output) } }
-                if (entry == "N_m3u8DL-RE" || entry == "ffmpeg" || entry == "mp4decrypt" || entry == "shaka-packager") target.setExecutable(true, true)
+                if (entry == "ffmpeg" || entry == "mp4decrypt" || entry == "shaka-packager") target.setExecutable(true, true)
             }
         }
     }
