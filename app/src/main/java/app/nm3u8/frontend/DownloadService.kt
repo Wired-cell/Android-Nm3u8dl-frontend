@@ -115,7 +115,12 @@ class DownloadService : Service() {
         val safe = if (line.contains("--key") || line.contains("KID:", true)) "[Sensitive argument output hidden]" else line
         sendBroadcast(Intent(ACTION_LOG).setPackage(packageName).putExtra(EXTRA_LINE, safe))
         val percent = Regex("""(?<!\\d)(\\d{1,3})%""").find(safe)?.groupValues?.get(1)?.toIntOrNull()?.coerceIn(0, 100)
-        updateNotification(safe.takeLast(110), percent, true)
+        val notificationText = when {
+            safe.contains("Loading URL:", true) -> "Loading manifest…"
+            safe.contains("Signature=", true) || safe.contains("Policy=", true) || safe.contains("Key-Pair-Id=", true) -> "Processing request…"
+            else -> safe.takeLast(110)
+        }
+        updateNotification(notificationText, percent, true)
     }
 
     private fun buildNotification(status: String, percent: Int?, ongoing: Boolean): Notification {
