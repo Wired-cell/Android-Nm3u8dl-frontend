@@ -11,8 +11,8 @@ android {
         applicationId = "app.nm3u8.frontend"
         minSdk = 29
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.4.4"
+        versionCode = 10
+        versionName = "1.4.5"
     }
 
     packaging {
@@ -37,8 +37,11 @@ android {
 
 tasks.register("verifyArm64Payload") {
     doLast {
-        val binary = file("src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so")
-        if (!binary.exists()) throw GradleException("Missing ARM64 executable in jniLibs. Run the prepare-native workflow step.")
+        val arm64 = file("src/main/jniLibs/arm64-v8a")
+        listOf("libN_m3u8DL-RE.so", "libffmpeg.so", "libmp4decrypt.so", "libopenssl-probe.so").forEach { name ->
+            val binary = file("$arm64/$name")
+            if (!binary.exists()) throw GradleException("Missing ARM64 executable $name in jniLibs. Run the prepare-native workflow step.")
+        }
     }
 }
 tasks.named("preBuild").configure { dependsOn("verifyArm64Payload") }
