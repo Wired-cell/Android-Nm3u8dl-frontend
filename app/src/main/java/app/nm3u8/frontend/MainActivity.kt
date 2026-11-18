@@ -84,13 +84,14 @@ class MainActivity : Activity() {
                 if (ffmpegCode != 0 || !ffmpegVersion.contains("ffmpeg", ignoreCase = true)) {
                     throw IllegalStateException("FFmpeg launch test failed (code $ffmpegCode): $ffmpegVersion")
                 }
-                val mp4decrypt = File(applicationInfo.nativeLibraryDir, "libmp4decrypt-launcher.so")
+                val mp4decrypt = File(applicationInfo.nativeLibraryDir, "libmp4decrypt.so")
                 if (!mp4decrypt.isFile || !mp4decrypt.canExecute()) {
-                    throw IllegalStateException("ARM64 mp4decrypt is missing or not executable in nativeLibraryDir: ${mp4decrypt.absolutePath}")
+                    throw IllegalStateException("ARM64 mp4decrypt executable is missing or not executable: ${mp4decrypt.absolutePath}")
                 }
                 val decryptBuilder = ProcessBuilder(mp4decrypt.absolutePath, "--help")
                     .directory(nativeDir).redirectErrorStream(true)
-                // The launcher uses only nativeLibraryDir for the child executable.
+                // Bento4 mp4decrypt is built with a static C++ runtime, so it can
+                // execute directly without the FFmpeg-specific launcher.
                 val decryptCheck = decryptBuilder.start()
                 val decryptOutput = decryptCheck.inputStream.bufferedReader().readText()
                 val decryptCode = decryptCheck.waitFor()
@@ -291,14 +292,14 @@ class MainActivity : Activity() {
         downloadDir.deleteRecursively()
         downloadDir.mkdirs()
         val ffmpeg = File(applicationInfo.nativeLibraryDir, "libffmpeg-launcher.so")
-        val mp4decrypt = File(applicationInfo.nativeLibraryDir, "libmp4decrypt-launcher.so")
+        val mp4decrypt = File(applicationInfo.nativeLibraryDir, "libmp4decrypt.so")
         if (!ffmpeg.canExecute() || !mp4decrypt.canExecute()) {
-            appendLog("FFmpeg or mp4decrypt is not executable from Android nativeLibraryDir. Reinstall the latest APK.")
+            appendLog("FFmpeg launcher or the actual mp4decrypt executable is missing/not executable in Android nativeLibraryDir.")
             return
         }
         val args = mutableListOf(binary.absolutePath, url)
         args.addAll(effectiveArgs)
-        args.addAll(listOf("--save-dir", downloadDir.absolutePath, "--ffmpeg-binary-path", ffmpeg.absolutePath, "--decryption-binary-path", mp4decrypt.absolutePath, "--no-log", "--ui-language", "en-US"))
+        args.addAll(listOf("--save-dir", downloadDir.absolutePath, "--ffmpeg-binary-path", ffmpeg.absolutePath, "--decryption-engine", "MP4DECRYPT", "--decryption-binary-path", mp4decrypt.absolutePath, "--no-log", "--ui-language", "en-US"))
 
         runButton.isEnabled = false
         stopButton.isEnabled = true
