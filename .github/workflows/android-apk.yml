@@ -114,9 +114,9 @@ jobs:
             find .ffmpeg-unpack -maxdepth 4 -type f -print
             exit 1
           fi
-          install -m 755 "${FFMPEG}" app/src/main/assets/native/ffmpeg
-          readelf -h app/src/main/assets/native/ffmpeg | grep -q 'AArch64'
-          ls -lh app/src/main/assets/native/ffmpeg
+          install -m 755 "${FFMPEG}" app/src/main/jniLibs/arm64-v8a/libffmpeg.so
+          readelf -h app/src/main/jniLibs/arm64-v8a/libffmpeg.so | grep -q 'AArch64'
+          ls -lh app/src/main/jniLibs/arm64-v8a/libffmpeg.so
 
       - name: Build Bento4 mp4decrypt for Android ARM64
         shell: bash
@@ -135,9 +135,9 @@ jobs:
           cmake --build .bento4/build-android --target mp4decrypt --parallel 2
           MP4DECRYPT="$(find .bento4/build-android -type f -name mp4decrypt -print -quit)"
           test -n "$MP4DECRYPT"
-          install -m 755 "$MP4DECRYPT" app/src/main/assets/native/mp4decrypt
-          readelf -h app/src/main/assets/native/mp4decrypt | grep -q 'AArch64'
-          ls -lh app/src/main/assets/native/mp4decrypt
+          install -m 755 "$MP4DECRYPT" app/src/main/jniLibs/arm64-v8a/libmp4decrypt.so
+          readelf -h app/src/main/jniLibs/arm64-v8a/libmp4decrypt.so | grep -q 'AArch64'
+          ls -lh app/src/main/jniLibs/arm64-v8a/libmp4decrypt.so
 
       - name: Verify Android ARM64 executable payload
         run: |
@@ -152,10 +152,10 @@ jobs:
           readelf -h app/src/main/assets/native/libcrypto.so | grep -q 'AArch64'
           readelf -h app/src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so | grep -E 'Class:|Machine:'
           readelf -h app/src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so | grep -q 'AArch64'
-          test -x app/src/main/assets/native/ffmpeg
-          readelf -h app/src/main/assets/native/ffmpeg | grep -q 'AArch64'
-          test -x app/src/main/assets/native/mp4decrypt
-          readelf -h app/src/main/assets/native/mp4decrypt | grep -q 'AArch64'
+          test -x app/src/main/jniLibs/arm64-v8a/libffmpeg.so
+          readelf -h app/src/main/jniLibs/arm64-v8a/libffmpeg.so | grep -q 'AArch64'
+          test -x app/src/main/jniLibs/arm64-v8a/libmp4decrypt.so
+          readelf -h app/src/main/jniLibs/arm64-v8a/libmp4decrypt.so | grep -q 'AArch64'
 
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
@@ -170,8 +170,8 @@ jobs:
           unzip -l "${APK}" | grep 'assets/native/libssl.so'
           unzip -l "${APK}" | grep 'assets/native/libcrypto.so'
           unzip -l "${APK}" | grep 'lib/arm64-v8a/libopenssl-probe.so'
-          unzip -l "${APK}" | grep 'assets/native/ffmpeg'
-          unzip -l "${APK}" | grep 'assets/native/mp4decrypt'
+          unzip -l "${APK}" | grep 'lib/arm64-v8a/libffmpeg.so'
+          unzip -l "${APK}" | grep 'lib/arm64-v8a/libmp4decrypt.so'
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
