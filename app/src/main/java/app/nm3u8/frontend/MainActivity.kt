@@ -73,8 +73,14 @@ class MainActivity : Activity() {
                 if (!ffmpeg.isFile || !ffmpeg.canExecute()) {
                     throw IllegalStateException("ARM64 FFmpeg is missing or not executable in nativeLibraryDir: ${ffmpeg.absolutePath}")
                 }
-                val ffmpegCheck = ProcessBuilder(ffmpeg.absolutePath, "-version")
-                    .directory(nativeDir).redirectErrorStream(true).start()
+                val ffmpegBuilder = ProcessBuilder(ffmpeg.absolutePath, "-version")
+                    .directory(nativeDir).redirectErrorStream(true)
+                // FFmpeg is a dynamically linked Android executable. Its NDK C++
+                // runtime is extracted beside it in nativeLibraryDir; explicitly
+                // expose that directory to bionic for this preflight process too.
+                ffmpegBuilder.environment()["LD_LIBRARY_PATH"] =
+                    "${applicationInfo.nativeLibraryDir}:${nativeDir.absolutePath}"
+                val ffmpegCheck = ffmpegBuilder.start()
                 val ffmpegVersion = ffmpegCheck.inputStream.bufferedReader().readLine().orEmpty()
                 val ffmpegCode = ffmpegCheck.waitFor()
                 if (ffmpegCode != 0 || !ffmpegVersion.contains("ffmpeg", ignoreCase = true)) {
@@ -84,8 +90,11 @@ class MainActivity : Activity() {
                 if (!mp4decrypt.isFile || !mp4decrypt.canExecute()) {
                     throw IllegalStateException("ARM64 mp4decrypt is missing or not executable in nativeLibraryDir: ${mp4decrypt.absolutePath}")
                 }
-                val decryptCheck = ProcessBuilder(mp4decrypt.absolutePath, "--help")
-                    .directory(nativeDir).redirectErrorStream(true).start()
+                val decryptBuilder = ProcessBuilder(mp4decrypt.absolutePath, "--help")
+                    .directory(nativeDir).redirectErrorStream(true)
+                decryptBuilder.environment()["LD_LIBRARY_PATH"] =
+                    "${applicationInfo.nativeLibraryDir}:${nativeDir.absolutePath}"
+                val decryptCheck = decryptBuilder.start()
                 val decryptOutput = decryptCheck.inputStream.bufferedReader().readText()
                 val decryptCode = decryptCheck.waitFor()
                 if (decryptCode != 0 && decryptOutput.isBlank()) {
@@ -305,7 +314,7 @@ class MainActivity : Activity() {
                 environment["TMPDIR"] = cacheDir.absolutePath
                 environment["PATH"] = "${applicationInfo.nativeLibraryDir}:${nativeDir.absolutePath}:${environment["PATH"].orEmpty()}"
                 // Prefer the matching OpenSSL libraries shipped with the Android Bionic engine.
-                environment["LD_LIBRARY_PATH"] = "${nativeDir.absolutePath}:${applicationInfo.nativeLibraryDir}:${environment["LD_LIBRARY_PATH"].orEmpty()}"
+                environment["LD_LIBRARY_PATH"] = "${applicationInfo.nativeLibraryDir}:${nativeDir.absolutePath}:${environment["LD_LIBRARY_PATH"].orEmpty()}"
                 process = builder.start()
                 process!!.inputStream.bufferedReader().useLines { lines ->
                     lines.forEach { line -> runOnUiThread { appendLog(line) } }
