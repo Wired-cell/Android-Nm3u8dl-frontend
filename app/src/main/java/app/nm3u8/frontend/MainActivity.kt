@@ -3,8 +3,9 @@ package app.nm3u8.frontend
 import android.app.Activity
 import android.graphics.Typeface
 import android.os.Bundle
+import android.text.InputType
+import android.text.method.PasswordTransformationMethod
 import android.view.Gravity
-import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -19,6 +20,7 @@ class MainActivity : Activity() {
     private lateinit var urlInput: EditText
     private lateinit var nameInput: EditText
     private lateinit var headersInput: EditText
+    private lateinit var keysInput: EditText
     private lateinit var optionsInput: EditText
     private lateinit var output: TextView
     private lateinit var runButton: Button
@@ -74,6 +76,16 @@ class MainActivity : Activity() {
         urlInput = field(content, "Playlist URL (HLS / DASH / MSS)", "https://example.com/playlist.m3u8")
         nameInput = field(content, "Output file name (optional)", "video")
         headersInput = field(content, "HTTP headers (one per line)", "User-Agent: Mozilla/5.0\nReferer: https://example.com", true)
+        keysInput = field(content, "Decryption keys (one per line)", "KID:KEY or KEY — only keys you are authorized to use", true).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            transformationMethod = PasswordTransformationMethod.getInstance()
+        }
+        content.addView(TextView(this).apply {
+            text = "Each line is passed as a separate --key argument. Supports KID:KEY pairs or a single KEY. Key values are hidden in this field and omitted from the app's command log."
+            textSize = 11f
+            setTextColor(0xFF667085.toInt())
+            setPadding(0, 0, 0, dp(8))
+        })
         optionsInput = field(content, "Extra N_m3u8DL-RE options", "--auto-select -mt", true)
 
         val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -155,10 +167,19 @@ class MainActivity : Activity() {
         headersInput.text.toString().lineSequence().map { it.trim() }.filter { it.contains(":") }.forEach {
             args.add("-H"); args.add(it)
         }
+        val suppliedKeys = keysInput.text.toString().lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
+        suppliedKeys.forEach { key ->
+            if (key.any { it.isWhitespace() }) {
+                appendLog("Each key must be a single token. Use one KID:KEY or KEY value per line.")
+                return
+            }
+            args.add("--key")
+            args.add(key)
+        }
         args.addAll(parseArguments(optionsInput.text.toString()))
         runButton.isEnabled = false
         stopButton.isEnabled = true
-        appendLog("\n> " + args.drop(1).joinToString(" "))
+        appendLog("\n> Download command started (decryption key values are not displayed).")
         executor.execute {
             try {
                 val builder = ProcessBuilder(args).directory(nativeDir).redirectErrorStream(true)
