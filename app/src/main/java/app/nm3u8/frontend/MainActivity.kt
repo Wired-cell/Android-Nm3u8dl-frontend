@@ -55,6 +55,23 @@ class MainActivity : Activity() {
                 if (!ssl.isFile || !crypto.isFile) {
                     throw IllegalStateException("Bundled OpenSSL is missing from ${nativeDir.absolutePath}. Reinstall the corrected APK.")
                 }
+                val ssl = File(nativeDir, "libssl.so")
+                val crypto = File(nativeDir, "libcrypto.so")
+                val sslProbe = File(nativeDir, "openssl-probe")
+                if (!ssl.isFile || !crypto.isFile || !sslProbe.canExecute()) {
+                    throw IllegalStateException("Bundled OpenSSL or its loader test is missing from ${nativeDir.absolutePath}.")
+                }
+                val probeBuilder = ProcessBuilder(sslProbe.absolutePath)
+                    .directory(nativeDir).redirectErrorStream(true)
+                probeBuilder.environment()["LD_LIBRARY_PATH"] =
+                    "${nativeDir.absolutePath}:${applicationInfo.nativeLibraryDir}"
+                val probe = probeBuilder.start()
+                val probeOutput = probe.inputStream.bufferedReader().use { it.readText() }.trim()
+                val probeCode = probe.waitFor()
+                if (probeCode != 0) {
+                    throw IllegalStateException("OpenSSL loader test failed (code $probeCode): $probeOutput")
+                }
+                runOnUiThread { appendLog(probeOutput) }
                 val ffmpeg = File(nativeDir, "ffmpeg")
                 if (!ffmpeg.exists() || !ffmpeg.canExecute()) {
                     throw IllegalStateException("Bundled ARM64 FFmpeg is missing or not executable: ${ffmpeg.absolutePath}")
