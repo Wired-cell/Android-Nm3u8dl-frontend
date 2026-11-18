@@ -70,8 +70,14 @@ jobs:
           make install_sw
           cd "$GITHUB_WORKSPACE"
           mkdir -p app/src/main/jniLibs/arm64-v8a
-          cp -L .openssl-install/lib64/libssl.so app/src/main/jniLibs/arm64-v8a/libssl.so
-          cp -L .openssl-install/lib64/libcrypto.so app/src/main/jniLibs/arm64-v8a/libcrypto.so
+          SSL_LIB="$(find .openssl-install -type f -name 'libssl.so*' | head -n 1)"
+          CRYPTO_LIB="$(find .openssl-install -type f -name 'libcrypto.so*' | head -n 1)"
+          test -n "$SSL_LIB"
+          test -n "$CRYPTO_LIB"
+          cp "$SSL_LIB" app/src/main/jniLibs/arm64-v8a/libssl.so
+          cp "$SSL_LIB" app/src/main/jniLibs/arm64-v8a/libssl.so.3
+          cp "$CRYPTO_LIB" app/src/main/jniLibs/arm64-v8a/libcrypto.so
+          cp "$CRYPTO_LIB" app/src/main/jniLibs/arm64-v8a/libcrypto.so.3
           readelf -h app/src/main/jniLibs/arm64-v8a/libssl.so | grep -q 'AArch64'
           readelf -h app/src/main/jniLibs/arm64-v8a/libcrypto.so | grep -q 'AArch64'
           ls -lh app/src/main/jniLibs/arm64-v8a/libssl.so app/src/main/jniLibs/arm64-v8a/libcrypto.so
