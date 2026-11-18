@@ -66,6 +66,12 @@ USER-REPORTED ERRORS
       - The diagnostic workflow accepts only repository Actions secrets NM3U8_TEST_MPD_URL and NM3U8_TEST_KID_KEY; output is sanitized (MPD query strings and key material redacted) and only the sanitized log is retained for 3 days. No media output is uploaded.
     Status: implementation committed; Android APK CI and a user-triggered protected-MPD reproduction are pending. The repeated stop at 29 segments remains unresolved until the diagnostic log identifies the failing request.
 
+[ ] 8. Repeated downloads stalled around segment 29. Upstream Program.cs sets HTTPUtil.AppHttpClient.Timeout from --http-request-timeout; upstream default is 100 seconds. With the default 3 retries, a single stuck segment can occupy roughly 6-7 minutes.
+    Changes committed:
+      - Android defaults to --http-request-timeout=30 and --download-retry-count=5, unless the user explicitly sets either option in Arguments.
+      - Diagnostic workflow uses 45-second request timeout and 5 retries and now adds Bento4's mp4decrypt directory to PATH, because this beta searches PATH and ignores --decryption-binary-path in its media-tool preflight.
+    Status: implementation committed; CI and actual protected-MPD reproduction pending. This is a timeout mitigation and diagnostic aid, not yet proof of the exact failing segment's cause.
+
 OTHER FIXES / REGRESSION GUARDS
 
 [ ] Keep the ARM64 N_m3u8DL-RE engine executable from nativeLibraryDir.
