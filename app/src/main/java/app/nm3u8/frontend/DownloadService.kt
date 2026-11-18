@@ -99,8 +99,12 @@ class DownloadService : Service() {
                 put("PATH", "$native:${work.absolutePath}:${get("PATH").orEmpty()}")
                 put("LD_LIBRARY_PATH", "$native:${work.absolutePath}:${get("LD_LIBRARY_PATH").orEmpty()}")
             }
+            sendBroadcast(Intent(ACTION_LOG).setPackage(packageName)
+                .putExtra(EXTRA_LINE, "Launching N_m3u8DL-RE through Android PTY (interactive terminal mode)…"))
             val child = builder.start()
             running = child
+            sendBroadcast(Intent(ACTION_LOG).setPackage(packageName)
+                .putExtra(EXTRA_LINE, "PTY attached. Waiting for per-track segment counters…"))
             var pending = StringBuilder()
             child.inputStream.buffered().use { stream ->
                 while (true) {
