@@ -3,7 +3,8 @@
     <application
         android:allowBackup="false"
         android:label="N_m3u8DL-RE"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar"
+        android:extractNativeLibs="true"
+        android:theme="@android:style/Theme.Material.NoActionBar"
         android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
