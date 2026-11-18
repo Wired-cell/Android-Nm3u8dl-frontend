@@ -152,7 +152,12 @@ class DownloadService : Service() {
     private fun finish(message: String, success: Boolean) {
         sendBroadcast(Intent(ACTION_FINISHED).setPackage(packageName).putExtra(EXTRA_LINE, message))
         updateNotification(message, if (success) 100 else null, false)
-        stopForeground(if (Build.VERSION.SDK_INT >= 24) STOP_FOREGROUND_DETACH else false)
+        if (Build.VERSION.SDK_INT >= 24) {
+            stopForeground(STOP_FOREGROUND_DETACH)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(false)
+        }
         stopSelf()
     }
 
