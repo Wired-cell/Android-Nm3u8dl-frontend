@@ -45,6 +45,19 @@ USER-REPORTED ERRORS
       - Pass an explicit writable cache subdirectory as --tmp-dir so segment staging does not depend on implicit runtime temp resolution.
     Status: source changes committed; CI and device retest pending. The user's log proves manifest parsing and stream selection only; it does not prove segment requests began.
 
+[ ] 6. Android progress output was not interactive; the app saw only manifest parsing and selected streams.
+    Root cause confirmed in upstream v0.6.0-beta source:
+      - SimpleDownloadManager.StartDownloadAsync() uses Spectre.Console Progress with TaskDescription, ProgressBar, MyPercentageColumn, DownloadStatusColumn, DownloadSpeedColumn, RemainingTime and Spinner columns.
+      - MyPercentageColumn renders the exact per-track counter as "Value/MaxValue NN.NN%".
+      - The previous ProcessBuilder pipe made Console.IsOutputRedirected true, so the engine's interactive terminal renderer was not reliably available to Android.
+    Changes committed:
+      - Added a small Android Bionic PTY runner (posix_openpt/grantpt/unlockpt/fork/setsid/TIOCSCTTY) which launches the original ARM64 engine with stdin/stdout/stderr attached to a real pseudo-terminal and relays the terminal byte stream to Android.
+      - Android DownloadService now launches the engine through libpty-runner.so rather than directly through a redirected pipe.
+      - Parser strips ANSI CSI control sequences and extracts upstream's real per-track "Value/MaxValue NN.NN%" counters; it combines the selected video/audio counters into a weighted segment percentage.
+      - App and foreground notification display video/audio segment counts and combined percentage.
+      - APK verification and Gradle payload checks require the PTY runner.
+    Status: implementation committed; CI build and Android device test pending. PTY output and segment-counter parsing must be verified on device before calling this resolved.
+
 OTHER FIXES / REGRESSION GUARDS
 
 [ ] Keep the ARM64 N_m3u8DL-RE engine executable from nativeLibraryDir.
