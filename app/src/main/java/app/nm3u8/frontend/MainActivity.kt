@@ -144,7 +144,7 @@ class MainActivity : Activity() {
             when (intent?.action) {
                 DownloadService.ACTION_LOG -> {
                     val percent = intent.getIntExtra(DownloadService.EXTRA_PROGRESS, -1)
-                    if (percent >= 0) updateDownloadProgress(percent)
+                    if (percent >= 0) updateDownloadProgress(percent, intent.getStringExtra(DownloadService.EXTRA_PROGRESS_TEXT))
                     intent.getStringExtra(DownloadService.EXTRA_LINE)?.takeUnless { it.startsWith("DOWNLOAD_PROGRESS:") }?.let { appendLog(it) }
                 }
                 DownloadService.ACTION_FINISHED -> {
@@ -503,11 +503,11 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun updateDownloadProgress(percent: Int) {
+    private fun updateDownloadProgress(percent: Int, detail: String?) {
         val value = percent.coerceIn(0, 100)
         progressBar.isIndeterminate = false
         progressBar.progress = value
-        progressLabel.text = "Segments downloaded: ${value}%"
+        progressLabel.text = (detail?.takeIf { it.isNotBlank() } ?: "Segments downloaded") + " · ${value}%"
     }
 
     private fun appendLog(line: String) {
