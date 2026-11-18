@@ -1,0 +1,32 @@
+N_m3u8DL-RE ANDROID FRONTEND — ERROR TRACKER
+Repository: Wired-cell/Android-Nm3u8dl-frontend
+Rule: Add every user-reported runtime/build error here. Keep this file updated after every fix and every verification run.
+Last updated: 2026-11-18
+
+USER-REPORTED ERRORS
+
+[ ] 1. FFmpeg launch: "libc++_shared.so not found".
+    Change made: Package the ARM64 NDK libc++_shared.so beside FFmpeg; verify APK contains it; use native-library directory for launch.
+    Verification: Source/workflow checks added. Requires successful CI build and Android-device smoke test before marking fully resolved.
+
+[ ] 2. FFmpeg launch: "cannot locate symbol OpenSSL_add_all_algorithms referenced by /system/lib64/libsqlite.so".
+    Change made: Added a dedicated FFmpeg launcher that resets LD_LIBRARY_PATH to the native-library directory so the app-private OpenSSL 3 folder is not exposed to FFmpeg/system libraries.
+    Verification: Source/workflow checks added. Requires successful CI build and Android-device smoke test before marking fully resolved.
+
+[ ] 3. Download start: "mp4decrypt not found".
+    Cause addressed: The app passed the mp4decrypt launcher path instead of the actual Bento4 executable to N_m3u8DL-RE.
+    Change made: Pass the packaged, executable libmp4decrypt.so directly with --decryption-engine MP4DECRYPT and --decryption-binary-path; preflight the actual executable with --help. Keep the launcher out of the downloader's configured path.
+    Verification: Source updated. Requires successful CI build and Android-device download test before marking fully resolved.
+
+OTHER FIXES / REGRESSION GUARDS
+
+[ ] Keep the ARM64 N_m3u8DL-RE engine executable from nativeLibraryDir.
+[ ] Keep OpenSSL runtime smoke test passing (current user log reported version=0x30300030).
+[ ] Keep FFmpeg preflight and actual download FFmpeg path consistent.
+[ ] Keep Bento4 mp4decrypt packaged as an AArch64 executable and preflight the same path used by the downloader.
+[ ] Keep APK verification checking all required ARM64 binaries and shared libraries.
+[ ] Run CI after every repository change; inspect failed job steps/logs and update this tracker.
+[ ] Do not mark a runtime issue resolved from source inspection or APK packaging alone; require a device test.
+
+DONE
+NO — outstanding CI and Android-device verification remain. Mark YES only when every reported error is fixed and verified on-device.
