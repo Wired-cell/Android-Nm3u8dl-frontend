@@ -67,13 +67,29 @@ class MainActivity : Activity() {
                     throw IllegalStateException("OpenSSL loader test failed (code $probeCode): $probeOutput")
                 }
                 runOnUiThread { appendLog(probeOutput) }
-                val ffmpeg = File(nativeDir, "ffmpeg")
-                if (!ffmpeg.exists() || !ffmpeg.canExecute()) {
-                    throw IllegalStateException("Bundled ARM64 FFmpeg is missing or not executable: ${ffmpeg.absolutePath}")
+                // Android app data is mounted noexec on many devices. Execute these tools
+                // from nativeLibraryDir, where APK native libraries are extracted executable.
+                val ffmpeg = File(applicationInfo.nativeLibraryDir, "libffmpeg.so")
+                if (!ffmpeg.isFile || !ffmpeg.canExecute()) {
+                    throw IllegalStateException("ARM64 FFmpeg is missing or not executable in nativeLibraryDir: ${ffmpeg.absolutePath}")
                 }
-                val mp4decrypt = File(nativeDir, "mp4decrypt")
-                if (!mp4decrypt.exists() || !mp4decrypt.canExecute()) {
-                    throw IllegalStateException("Bundled ARM64 mp4decrypt is missing or not executable: ${mp4decrypt.absolutePath}")
+                val ffmpegCheck = ProcessBuilder(ffmpeg.absolutePath, "-version")
+                    .directory(nativeDir).redirectErrorStream(true).start()
+                val ffmpegVersion = ffmpegCheck.inputStream.bufferedReader().readLine().orEmpty()
+                val ffmpegCode = ffmpegCheck.waitFor()
+                if (ffmpegCode != 0 || !ffmpegVersion.contains("ffmpeg", ignoreCase = true)) {
+                    throw IllegalStateException("FFmpeg launch test failed (code $ffmpegCode): $ffmpegVersion")
+                }
+                val mp4decrypt = File(applicationInfo.nativeLibraryDir, "libmp4decrypt.so")
+                if (!mp4decrypt.isFile || !mp4decrypt.canExecute()) {
+                    throw IllegalStateException("ARM64 mp4decrypt is missing or not executable in nativeLibraryDir: ${mp4decrypt.absolutePath}")
+                }
+                val decryptCheck = ProcessBuilder(mp4decrypt.absolutePath, "--help")
+                    .directory(nativeDir).redirectErrorStream(true).start()
+                val decryptOutput = decryptCheck.inputStream.bufferedReader().readText()
+                val decryptCode = decryptCheck.waitFor()
+                if (decryptCode != 0 && decryptOutput.isBlank()) {
+                    throw IllegalStateException("mp4decrypt launch test failed (code $decryptCode).")
                 }
                 val check = ProcessBuilder(binary.absolutePath, "--version")
                     .directory(nativeDir).redirectErrorStream(true).start()
@@ -268,14 +284,15 @@ class MainActivity : Activity() {
 
         downloadDir.deleteRecursively()
         downloadDir.mkdirs()
-        val mp4decrypt = File(nativeDir, "mp4decrypt")
-        if (!mp4decrypt.exists() || !mp4decrypt.canExecute()) {
-            appendLog("Bundled mp4decrypt is missing. Reinstall the latest APK.")
+        val ffmpeg = File(applicationInfo.nativeLibraryDir, "libffmpeg.so")
+        val mp4decrypt = File(applicationInfo.nativeLibraryDir, "libmp4decrypt.so")
+        if (!ffmpeg.canExecute() || !mp4decrypt.canExecute()) {
+            appendLog("FFmpeg or mp4decrypt is not executable from Android nativeLibraryDir. Reinstall the latest APK.")
             return
         }
         val args = mutableListOf(binary.absolutePath, url)
         args.addAll(effectiveArgs)
-        args.addAll(listOf("--save-dir", downloadDir.absolutePath, "--decryption-binary-path", mp4decrypt.absolutePath, "--no-log", "--ui-language", "en-US"))
+        args.addAll(listOf("--save-dir", downloadDir.absolutePath, "--ffmpeg-binary-path", ffmpeg.absolutePath, "--decryption-binary-path", mp4decrypt.absolutePath, "--no-log", "--ui-language", "en-US"))
 
         runButton.isEnabled = false
         stopButton.isEnabled = true
@@ -286,7 +303,7 @@ class MainActivity : Activity() {
                 val environment = builder.environment()
                 environment["HOME"] = filesDir.absolutePath
                 environment["TMPDIR"] = cacheDir.absolutePath
-                environment["PATH"] = "${nativeDir.absolutePath}:${environment["PATH"].orEmpty()}"
+                environment["PATH"] = "${applicationInfo.nativeLibraryDir}:${nativeDir.absolutePath}:${environment["PATH"].orEmpty()}"
                 // Prefer the matching OpenSSL libraries shipped with the Android Bionic engine.
                 environment["LD_LIBRARY_PATH"] = "${nativeDir.absolutePath}:${applicationInfo.nativeLibraryDir}:${environment["LD_LIBRARY_PATH"].orEmpty()}"
                 process = builder.start()
