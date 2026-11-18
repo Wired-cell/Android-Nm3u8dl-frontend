@@ -53,6 +53,40 @@ jobs:
           ls -l app/src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so
           file app/src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so
 
+      - name: Build Android ARM64 OpenSSL runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          NDK="$(find "$ANDROID_HOME/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export ANDROID_NDK_ROOT="$NDK"
+          export PATH="$TOOLCHAIN:$PATH"
+          mkdir -p .openssl-src
+          curl --fail --location --retry 3 --retry-all-errors https://www.openssl.org/source/openssl-3.3.3.tar.gz -o /tmp/openssl.tar.gz
+          tar -xzf /tmp/openssl.tar.gz -C .openssl-src --strip-components=1
+          cd .openssl-src
+          ./Configure android-arm64 -D__ANDROID_API__=29 --prefix="$GITHUB_WORKSPACE/.openssl-install" shared
+          make -j2
+          make install_sw
+          cd "$GITHUB_WORKSPACE"
+          mkdir -p app/src/main/jniLibs/arm64-v8a
+          cp -L .openssl-install/lib64/libssl.so app/src/main/jniLibs/arm64-v8a/libssl.so
+          cp -L .openssl-install/lib64/libcrypto.so app/src/main/jniLibs/arm64-v8a/libcrypto.so
+          readelf -h app/src/main/jniLibs/arm64-v8a/libssl.so | grep -q 'AArch64'
+          readelf -h app/src/main/jniLibs/arm64-v8a/libcrypto.so | grep -q 'AArch64'
+          ls -lh app/src/main/jniLibs/arm64-v8a/libssl.so app/src/main/jniLibs/arm64-v8a/libcrypto.so
+
+      - name: Patch engine library search path
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y patchelf
+          patchelf --set-rpath '$ORIGIN' app/src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so
+          echo "Engine dynamic section:"
+          readelf -d app/src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so | grep -E 'NEEDED|RPATH|RUNPATH' || true
+          readelf -d app/src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so | grep -q '\$ORIGIN'
+
       - name: Download static Android ARM64 FFmpeg
         shell: bash
         run: |
@@ -115,6 +149,8 @@ jobs:
           test -s "${APK}"
           $ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/aapt dump badging "${APK}" | grep "package:"
           unzip -l "${APK}" | grep 'lib/arm64-v8a/libN_m3u8DL-RE.so'
+          unzip -l "${APK}" | grep 'lib/arm64-v8a/libssl.so'
+          unzip -l "${APK}" | grep 'lib/arm64-v8a/libcrypto.so'
           unzip -l "${APK}" | grep 'assets/native/ffmpeg'
           unzip -l "${APK}" | grep 'assets/native/mp4decrypt'
 
