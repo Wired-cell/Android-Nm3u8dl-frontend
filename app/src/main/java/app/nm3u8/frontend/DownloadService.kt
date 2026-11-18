@@ -27,6 +27,7 @@ class DownloadService : Service() {
         const val EXTRA_NATIVE_DIR = "native_dir"
         const val EXTRA_DOWNLOAD_DIR = "download_dir"
         const val EXTRA_LINE = "line"
+        const val EXTRA_PROGRESS = "progress"
         private const val CHANNEL_ID = "downloads"
         private const val NOTIFICATION_ID = 2401
     }
@@ -125,11 +126,15 @@ class DownloadService : Service() {
     private fun publishLine(line: String) {
         val safe = if (line.contains("--key") || line.contains("KID:", true)) "[Sensitive argument output hidden]" else line
         sendBroadcast(Intent(ACTION_LOG).setPackage(packageName).putExtra(EXTRA_LINE, safe))
-        val percent = Regex("""(?<!\d)(\d{1,3})%""").find(safe)?.groupValues?.get(1)?.toIntOrNull()?.coerceIn(0, 100)
+        val clean = safe.replace(Regex("""\u001B\[[;\d?]*[ -/]*[@-~]"""), "")
+        val percent = Regex("""(?<!\d)(\d{1,3})%""").find(clean)?.groupValues?.get(1)?.toIntOrNull()?.coerceIn(0, 100)
+        if (percent != null) sendBroadcast(Intent(ACTION_LOG).setPackage(packageName)
+            .putExtra(EXTRA_LINE, "DOWNLOAD_PROGRESS:$percent").putExtra(EXTRA_PROGRESS, percent))
         val notificationText = when {
             safe.contains("Loading URL:", true) -> "Loading manifest…"
             safe.contains("Signature=", true) || safe.contains("Policy=", true) || safe.contains("Key-Pair-Id=", true) -> "Processing request…"
-            else -> safe.takeLast(110)
+            percent != null -> "Downloading segments: $percent%"
+            else -> clean.takeLast(110)
         }
         updateNotification(notificationText, percent, true)
     }
