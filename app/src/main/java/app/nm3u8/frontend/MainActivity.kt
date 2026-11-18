@@ -52,11 +52,6 @@ class MainActivity : Activity() {
                 }
                 val ssl = File(nativeDir, "libssl.so")
                 val crypto = File(nativeDir, "libcrypto.so")
-                if (!ssl.isFile || !crypto.isFile) {
-                    throw IllegalStateException("Bundled OpenSSL is missing from ${nativeDir.absolutePath}. Reinstall the corrected APK.")
-                }
-                val ssl = File(nativeDir, "libssl.so")
-                val crypto = File(nativeDir, "libcrypto.so")
                 val sslProbe = File(nativeDir, "openssl-probe")
                 if (!ssl.isFile || !crypto.isFile || !sslProbe.canExecute()) {
                     throw IllegalStateException("Bundled OpenSSL or its loader test is missing from ${nativeDir.absolutePath}.")
