@@ -91,10 +91,11 @@ jobs:
           set -euo pipefail
           NDK="$(find "$ANDROID_HOME/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
           CLANG="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang"
-          "$CLANG" app/src/main/cpp/openssl_probe.c -o app/src/main/assets/native/openssl-probe -ldl
-          chmod 755 app/src/main/assets/native/openssl-probe
-          readelf -h app/src/main/assets/native/openssl-probe | grep -q 'AArch64'
-          ls -lh app/src/main/assets/native/openssl-probe
+          mkdir -p app/src/main/jniLibs/arm64-v8a
+          "$CLANG" app/src/main/cpp/openssl_probe.c -o app/src/main/jniLibs/arm64-v8a/libopenssl-probe.so -ldl
+          chmod 755 app/src/main/jniLibs/arm64-v8a/libopenssl-probe.so
+          readelf -h app/src/main/jniLibs/arm64-v8a/libopenssl-probe.so | grep -q 'AArch64'
+          ls -lh app/src/main/jniLibs/arm64-v8a/libopenssl-probe.so
 
       - name: Download static Android ARM64 FFmpeg
         shell: bash
@@ -145,8 +146,8 @@ jobs:
           test -s app/src/main/assets/native/libssl.so.3
           test -s app/src/main/assets/native/libcrypto.so
           test -s app/src/main/assets/native/libcrypto.so.3
-          test -x app/src/main/assets/native/openssl-probe
-          readelf -h app/src/main/assets/native/openssl-probe | grep -q 'AArch64'
+          test -x app/src/main/jniLibs/arm64-v8a/libopenssl-probe.so
+          readelf -h app/src/main/jniLibs/arm64-v8a/libopenssl-probe.so | grep -q 'AArch64'
           readelf -h app/src/main/assets/native/libssl.so | grep -q 'AArch64'
           readelf -h app/src/main/assets/native/libcrypto.so | grep -q 'AArch64'
           readelf -h app/src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so | grep -E 'Class:|Machine:'
@@ -168,7 +169,7 @@ jobs:
           unzip -l "${APK}" | grep 'lib/arm64-v8a/libN_m3u8DL-RE.so'
           unzip -l "${APK}" | grep 'assets/native/libssl.so'
           unzip -l "${APK}" | grep 'assets/native/libcrypto.so'
-          unzip -l "${APK}" | grep 'assets/native/openssl-probe'
+          unzip -l "${APK}" | grep 'lib/arm64-v8a/libopenssl-probe.so'
           unzip -l "${APK}" | grep 'assets/native/ffmpeg'
           unzip -l "${APK}" | grep 'assets/native/mp4decrypt'
 
