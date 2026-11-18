@@ -147,13 +147,33 @@ class DownloadService : Service() {
         val clean = safe.replace(Regex("\\u001B\\[[0-?]*[ -/]*[@-~]"), "")
             .replace(Regex("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F]"), "")
         sendBroadcast(Intent(ACTION_LOG).setPackage(packageName).putExtra(EXTRA_LINE, clean))
+        // The engine's stream summary is the authoritative segment count.
+        // Spectre's percentage column can be rendered with a denominator of 100
+        // on some terminals, so never trust that denominator over the manifest.
+        val manifestCount = Regex("""(\d+)\s+Segments""", RegexOption.IGNORE_CASE)
+            .find(clean)?.groupValues?.get(1)?.toIntOrNull()
+        if (manifestCount != null) {
+            when {
+                clean.contains("Vid", true) -> videoTotal = manifestCount + 1 // DASH init segment
+                clean.contains("Aud", true) -> audioTotal = manifestCount + 1
+            }
+        }
         val segmentMatch = Regex("""(\d+)\s*/\s*(\d+)\s+(\d+(?:\.\d+)?)%""").find(clean)
         if (segmentMatch != null) {
-            val done = segmentMatch.groupValues[1].toIntOrNull() ?: 0
-            val total = segmentMatch.groupValues[2].toIntOrNull() ?: 0
+            val rawDone = segmentMatch.groupValues[1].toIntOrNull() ?: 0
+            val rawTotal = segmentMatch.groupValues[2].toIntOrNull() ?: 0
+            val pct = segmentMatch.groupValues[3].toDoubleOrNull()?.coerceIn(0.0, 100.0)
             when {
-                clean.contains("Vid", true) -> { videoSegments = done; videoTotal = total }
-                clean.contains("Aud", true) -> { audioSegments = done; audioTotal = total }
+                clean.contains("Vid", true) -> {
+                    if (videoTotal == 0) videoTotal = rawTotal
+                    videoSegments = if (rawTotal == videoTotal || videoTotal == 0) rawDone
+                        else ((pct ?: 0.0) * videoTotal / 100.0).toInt()
+                }
+                clean.contains("Aud", true) -> {
+                    if (audioTotal == 0) audioTotal = rawTotal
+                    audioSegments = if (rawTotal == audioTotal || audioTotal == 0) rawDone
+                        else ((pct ?: 0.0) * audioTotal / 100.0).toInt()
+                }
             }
         }
         val knownTotal = videoTotal + audioTotal
