@@ -55,6 +55,8 @@ jobs:
           test -n "$MP4DECRYPT"
           chmod +x "$MP4DECRYPT"
           echo "MP4DECRYPT=$GITHUB_WORKSPACE/$MP4DECRYPT" >> "$GITHUB_ENV"
+          # v0.6.0-beta searches PATH for mp4decrypt and ignores the explicit path option.
+          echo "$GITHUB_WORKSPACE/$(dirname "$MP4DECRYPT")" >> "$GITHUB_PATH"
 
       - name: Run protected MPD reproduction with sanitized diagnostics
         env:
