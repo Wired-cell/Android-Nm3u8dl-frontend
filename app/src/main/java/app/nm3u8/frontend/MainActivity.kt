@@ -15,6 +15,7 @@ import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
 import java.io.File
+import java.nio.file.Files
 import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
@@ -88,15 +89,30 @@ class MainActivity : Activity() {
                 if (!mp4decrypt.isFile || !mp4decrypt.canExecute()) {
                     throw IllegalStateException("ARM64 mp4decrypt executable is missing or not executable: ${mp4decrypt.absolutePath}")
                 }
-                val decryptBuilder = ProcessBuilder(mp4decrypt.absolutePath, "--help")
+                // The bundled v0.6.0-beta engine ignores --decryption-binary-path:
+                // its MP4DECRYPT branch calls FindExecutable("mp4decrypt"), which
+                // searches the process working directory before PATH. Put a symlink
+                // with that exact name in nativeDir; its target remains the executable
+                // extracted from the APK into nativeLibraryDir (the noexec-safe location).
+                val mp4decryptLookup = File(nativeDir, "mp4decrypt")
+                Files.deleteIfExists(mp4decryptLookup.toPath())
+                Files.createSymbolicLink(mp4decryptLookup.toPath(), mp4decrypt.toPath())
+                if (!mp4decryptLookup.isFile || !mp4decryptLookup.canExecute() ||
+                    mp4decryptLookup.canonicalFile != mp4decrypt.canonicalFile) {
+                    throw IllegalStateException("mp4decrypt PATH shim is invalid: ${mp4decryptLookup.absolutePath}")
+                }
+                // Test the exact path the engine's FindExecutable() will discover,
+                // not merely the underlying APK-extracted binary.
+                val decryptBuilder = ProcessBuilder(mp4decryptLookup.absolutePath, "--help")
                     .directory(nativeDir).redirectErrorStream(true)
-                // Bento4 mp4decrypt is built with a static C++ runtime, so it can
-                // execute directly without the FFmpeg-specific launcher.
                 val decryptCheck = decryptBuilder.start()
                 val decryptOutput = decryptCheck.inputStream.bufferedReader().readText()
                 val decryptCode = decryptCheck.waitFor()
-                if (decryptCode != 0 && decryptOutput.isBlank()) {
-                    throw IllegalStateException("mp4decrypt launch test failed (code $decryptCode).")
+                if (decryptOutput.isBlank()) {
+                    throw IllegalStateException("mp4decrypt PATH shim launch test failed (code $decryptCode).")
+                }
+                runOnUiThread {
+                    appendLog("mp4decrypt PATH lookup verified: ${mp4decryptLookup.absolutePath} -> ${mp4decryptLookup.canonicalPath} (exit $decryptCode)")
                 }
                 val check = ProcessBuilder(binary.absolutePath, "--version")
                     .directory(nativeDir).redirectErrorStream(true).start()
@@ -298,15 +314,18 @@ class MainActivity : Activity() {
             return
         }
         val mp4decryptPath = mp4decrypt.canonicalPath
-        if (!File(mp4decryptPath).isFile || !File(mp4decryptPath).canExecute()) {
-            appendLog("mp4decrypt preflight failed: $mp4decryptPath")
+        val mp4decryptLookup = File(nativeDir, "mp4decrypt")
+        if (!File(mp4decryptPath).isFile || !File(mp4decryptPath).canExecute() ||
+            !mp4decryptLookup.isFile || !mp4decryptLookup.canExecute() ||
+            mp4decryptLookup.canonicalFile != mp4decrypt.canonicalFile) {
+            appendLog("mp4decrypt PATH shim is missing or invalid. Reopen the app to rerun native-tool setup.")
             return
         }
         val args = mutableListOf(binary.absolutePath, url)
         args.addAll(effectiveArgs)
-        // Use --option=value tokens so System.CommandLine receives the binary path
-        // as the option value even when the positional manifest URL and user args
-        // are present. The upstream engine only searches PATH when this option is null.
+        // Keep the explicit path for engine versions that honor it. The bundled
+        // v0.6.0-beta build ignores it for MP4DECRYPT, so the working-directory
+        // symlink named "mp4decrypt" above is the compatibility path it actually finds.
         args.addAll(listOf(
             "--save-dir=${downloadDir.absolutePath}",
             "--ffmpeg-binary-path=${ffmpeg.absolutePath}",
@@ -319,7 +338,7 @@ class MainActivity : Activity() {
         runButton.isEnabled = false
         stopButton.isEnabled = true
         appendLog("\nStarting download… (key values are hidden)")
-        appendLog("Configured mp4decrypt executable: $mp4decryptPath")
+        appendLog("mp4decrypt engine lookup: ${mp4decryptLookup.absolutePath} -> $mp4decryptPath")
         executor.execute {
             try {
                 val builder = ProcessBuilder(args).directory(nativeDir).redirectErrorStream(true)
