@@ -12,6 +12,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Spinner
 import android.widget.TextView
 import java.io.File
 import java.util.concurrent.Executors
@@ -21,6 +22,7 @@ class MainActivity : Activity() {
     private var process: Process? = null
     private lateinit var urlInput: EditText
     private lateinit var argumentsInput: EditText
+    private lateinit var qualitySpinner: Spinner
     private lateinit var output: TextView
     private lateinit var runButton: Button
     private lateinit var stopButton: Button
@@ -96,13 +98,36 @@ class MainActivity : Activity() {
         })
 
         urlInput = field(content, "MPD / playlist URL", "https://example.com/manifest.mpd")
-        argumentsInput = field(content, "Arguments", "--key \"KID:KEY\"\n-sv res=\"^1920x\":for=best", true).apply {
+        content.addView(TextView(this).apply {
+            text = "VIDEO QUALITY"
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(fg)
+            setPadding(0, dp(12), 0, dp(6))
+        })
+        qualitySpinner = Spinner(this).apply {
+            adapter = android.widget.ArrayAdapter(
+                this@MainActivity,
+                android.R.layout.simple_spinner_dropdown_item,
+                listOf("Auto (240p)", "Best available", "720p • 1280×720", "480p • 854×480", "360p • 640×360", "240p • 426×240")
+            ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+            setSelection(0)
+        }
+        content.addView(qualitySpinner, LinearLayout.LayoutParams(-1, dp(52)).apply { bottomMargin = dp(8) })
+        argumentsInput = field(content, "Arguments", "--key \"KID:KEY\"", true).apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             minLines = 4
             maxLines = 8
         }
+        qualitySpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
+                syncQualityArguments(position)
+            }
+        }
+        syncQualityArguments(0)
         content.addView(TextView(this).apply {
-            text = "Enter normal N_m3u8DL-RE options here; quotes are supported. Example: --key \"KID:KEY\". Quality: -sv best (best available), -sv res=\"^1920x\":for=best (1080p), or -sv res=\"^3840x\":for=best (4K). Add --auto-select to choose best audio/subtitles too. HTTP headers are only needed when the server requires them."
+            text = "The selected video quality is mirrored into Arguments automatically. Audio is always set to best. Add your decryption key as --key \"KID:KEY\". HTTP headers are only needed when the server requires them."
             textSize = 12f
             setTextColor(0xFFBFBFBF.toInt())
             setPadding(0, dp(4), 0, dp(16))
@@ -173,6 +198,22 @@ class MainActivity : Activity() {
         }
         parent.addView(edit, LinearLayout.LayoutParams(-1, if (multiline) dp(112) else dp(56)).apply { bottomMargin = dp(4) })
         return edit
+    }
+
+    private fun syncQualityArguments(position: Int) {
+        val selector = when (position) {
+            1 -> "best"
+            2 -> "res=^1280x720:for=best"
+            3 -> "res=^854x480:for=best"
+            4 -> "res=^640x360:for=best"
+            else -> "res=^426x240:for=best"
+        }
+        // Keep key and other user options, but replace any prior video/audio selectors.
+        val raw = argumentsInput.text.toString()
+        val withoutVideo = raw.replace(Regex("""(?m)(?:^|\s)(?:-sv|--select-video)\s+(?:"[^"]*"|'[^']*'|\S+)"""), " ")
+        val withoutAudio = withoutVideo.replace(Regex("""(?m)(?:^|\s)(?:-sa|--select-audio)\s+(?:"[^"]*"|'[^']*'|\S+)"""), " ")
+        argumentsInput.setText((withoutAudio.trim() + " -sv " + selector + " -sa best").trim())
+        argumentsInput.setSelection(argumentsInput.text.length)
     }
 
     private fun startDownload() {
