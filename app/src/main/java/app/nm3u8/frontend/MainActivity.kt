@@ -32,6 +32,9 @@ class MainActivity : Activity() {
     private lateinit var argumentsInput: EditText
     private lateinit var qualitySpinner: Spinner
     private lateinit var output: TextView
+    private lateinit var logScroll: ScrollView
+    private lateinit var progressBar: android.widget.ProgressBar
+    private lateinit var progressLabel: TextView
     private lateinit var runButton: Button
     private lateinit var stopButton: Button
     private lateinit var nativeDir: File
@@ -139,7 +142,11 @@ class MainActivity : Activity() {
     private val downloadReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
-                DownloadService.ACTION_LOG -> intent.getStringExtra(DownloadService.EXTRA_LINE)?.let { appendLog(it) }
+                DownloadService.ACTION_LOG -> {
+                    val percent = intent.getIntExtra(DownloadService.EXTRA_PROGRESS, -1)
+                    if (percent >= 0) updateDownloadProgress(percent)
+                    intent.getStringExtra(DownloadService.EXTRA_LINE)?.takeUnless { it.startsWith("DOWNLOAD_PROGRESS:") }?.let { appendLog(it) }
+                }
                 DownloadService.ACTION_FINISHED -> {
                     appendLog(intent.getStringExtra(DownloadService.EXTRA_LINE).orEmpty())
                     runButton.isEnabled = true
@@ -248,6 +255,19 @@ class MainActivity : Activity() {
             setTextColor(muted)
             setPadding(0, dp(20), 0, dp(8))
         })
+        progressLabel = TextView(this).apply {
+            text = "Download progress: waiting for segments…"
+            textSize = 12f
+            setTextColor(fg)
+            setPadding(0, dp(8), 0, dp(4))
+        }
+        content.addView(progressLabel)
+        progressBar = android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 100
+            progress = 0
+            isIndeterminate = true
+        }
+        content.addView(progressBar, LinearLayout.LayoutParams(-1, dp(8)).apply { bottomMargin = dp(10) })
         output = TextView(this).apply {
             text = "Preparing ARM64 engine…"
             textSize = 12f
@@ -257,7 +277,13 @@ class MainActivity : Activity() {
             setBackgroundColor(0xFF191A21.toInt())
             setTextIsSelectable(true)
         }
-        content.addView(output, LinearLayout.LayoutParams(-1, dp(220)))
+        logScroll = ScrollView(this).apply {
+            isFillViewport = true
+            isNestedScrollingEnabled = true
+            setBackgroundColor(0xFF191A21.toInt())
+            addView(output)
+        }
+        content.addView(logScroll, LinearLayout.LayoutParams(-1, dp(260)))
         content.addView(TextView(this).apply {
             text = "Completed files are copied to the public Downloads/N_m3u8DL-RE folder."
             textSize = 12f
@@ -374,6 +400,7 @@ class MainActivity : Activity() {
             "--decryption-engine=MP4DECRYPT",
             "--decryption-binary-path=$mp4decryptPath",
             "--no-log",
+            "--force-ansi-console",
             "--ui-language=en-US"
         ))
 
@@ -476,13 +503,17 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun updateDownloadProgress(percent: Int) {
+        val value = percent.coerceIn(0, 100)
+        progressBar.isIndeterminate = false
+        progressBar.progress = value
+        progressLabel.text = "Segments downloaded: ${value}%"
+    }
+
     private fun appendLog(line: String) {
+        val wasAtBottom = logScroll.scrollY + logScroll.height >= (logScroll.getChildAt(0)?.height ?: 0) - dp(24)
         output.append(line + "\n")
-        val layout = output.layout
-        if (layout != null) {
-            val scrollAmount = layout.getLineTop(output.lineCount) - output.height
-            if (scrollAmount > 0) output.scrollTo(0, scrollAmount) else output.scrollTo(0, 0)
-        }
+        if (wasAtBottom) logScroll.post { logScroll.fullScroll(ScrollView.FOCUS_DOWN) }
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
