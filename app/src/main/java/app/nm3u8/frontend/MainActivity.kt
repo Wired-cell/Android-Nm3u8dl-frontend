@@ -50,6 +50,11 @@ class MainActivity : Activity() {
                 if (!binary.exists() || !binary.canExecute()) {
                     throw IllegalStateException("ARM64 engine was not extracted as an executable native library: ${binary.absolutePath}")
                 }
+                val ssl = File(nativeDir, "libssl.so")
+                val crypto = File(nativeDir, "libcrypto.so")
+                if (!ssl.isFile || !crypto.isFile) {
+                    throw IllegalStateException("Bundled OpenSSL is missing from ${nativeDir.absolutePath}. Reinstall the corrected APK.")
+                }
                 val ffmpeg = File(nativeDir, "ffmpeg")
                 if (!ffmpeg.exists() || !ffmpeg.canExecute()) {
                     throw IllegalStateException("Bundled ARM64 FFmpeg is missing or not executable: ${ffmpeg.absolutePath}")
@@ -271,7 +276,7 @@ class MainActivity : Activity() {
                 environment["TMPDIR"] = cacheDir.absolutePath
                 environment["PATH"] = "${nativeDir.absolutePath}:${environment["PATH"].orEmpty()}"
                 // Prefer the matching OpenSSL libraries shipped with the Android Bionic engine.
-                environment["LD_LIBRARY_PATH"] = "${nativeDir.absolutePath}:${environment["LD_LIBRARY_PATH"].orEmpty()}"
+                environment["LD_LIBRARY_PATH"] = "${nativeDir.absolutePath}:${applicationInfo.nativeLibraryDir}:${environment["LD_LIBRARY_PATH"].orEmpty()}"
                 process = builder.start()
                 process!!.inputStream.bufferedReader().useLines { lines ->
                     lines.forEach { line -> runOnUiThread { appendLog(line) } }
