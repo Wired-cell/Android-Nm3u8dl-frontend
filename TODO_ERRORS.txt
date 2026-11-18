@@ -26,6 +26,17 @@ USER-REPORTED ERRORS
     Status: Source fix committed; NOT yet runtime-verified. CI build and an encrypted MPD device download are still required. If the device rejects symlink execution, next step is to patch/rebuild the engine to honor DecryptionBinaryPath rather than claim success.
     Verification required: Successful encrypted MPD download on Android, not merely a successful APK build.
 
+[ ] 4. Progress visibility / background execution.
+    Changes committed for app version 1.5.2 (versionCode 17):
+      - Download process moved out of MainActivity into DownloadService.
+      - Service calls startForeground immediately and keeps an ongoing Downloads notification while the engine runs.
+      - Notification updates with emitted engine output; percentage is shown when the engine emits a percent value, otherwise an indeterminate progress indicator is used.
+      - Notification includes a Stop action; app Stop button controls the same service.
+      - Runtime POST_NOTIFICATIONS permission is requested on Android 13+; if denied, Android may hide the notification from the drawer although the foreground service remains visible in system task manager.
+      - Download process is no longer tied to Activity destruction, so it can continue when app is backgrounded. Android battery/vendor restrictions can still affect long-running transfers.
+      - Signed URL query parameters are suppressed in notification text.
+    Status: source changes committed; CI build and device background/notification test pending. Verify notification updates, Stop action, completion notification, and return to app log on device.
+
 OTHER FIXES / REGRESSION GUARDS
 
 [ ] Keep the ARM64 N_m3u8DL-RE engine executable from nativeLibraryDir.
