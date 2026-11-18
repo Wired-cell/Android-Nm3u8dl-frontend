@@ -143,7 +143,7 @@ class DownloadService : Service() {
         val clean = safe.replace(Regex("\\u001B\\[[0-?]*[ -/]*[@-~]"), "")
             .replace(Regex("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F]"), "")
         sendBroadcast(Intent(ACTION_LOG).setPackage(packageName).putExtra(EXTRA_LINE, clean))
-        val segmentMatch = Regex("""(\\d+)\\s*/\\s*(\\d+)\\s+(\\d+(?:\\.\\d+)?)%""").find(clean)
+        val segmentMatch = Regex("""(\d+)\s*/\s*(\d+)\s+(\d+(?:\.\d+)?)%""").find(clean)
         if (segmentMatch != null) {
             val done = segmentMatch.groupValues[1].toIntOrNull() ?: 0
             val total = segmentMatch.groupValues[2].toIntOrNull() ?: 0
