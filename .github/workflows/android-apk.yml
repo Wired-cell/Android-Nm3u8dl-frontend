@@ -72,8 +72,6 @@ jobs:
           fi
           install -m 755 "${FFMPEG}" app/src/main/assets/native/ffmpeg
           readelf -h app/src/main/assets/native/ffmpeg | grep -q 'AArch64'
-          test -x app/src/main/assets/native/mp4decrypt
-          readelf -h app/src/main/assets/native/mp4decrypt | grep -q 'AArch64'
           ls -lh app/src/main/assets/native/ffmpeg
 
       - name: Build Bento4 mp4decrypt for Android ARM64
@@ -104,6 +102,8 @@ jobs:
           readelf -h app/src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so | grep -q 'AArch64'
           test -x app/src/main/assets/native/ffmpeg
           readelf -h app/src/main/assets/native/ffmpeg | grep -q 'AArch64'
+          test -x app/src/main/assets/native/mp4decrypt
+          readelf -h app/src/main/assets/native/mp4decrypt | grep -q 'AArch64'
 
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
