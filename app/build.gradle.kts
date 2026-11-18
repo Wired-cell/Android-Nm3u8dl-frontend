@@ -11,8 +11,8 @@ android {
         applicationId = "app.nm3u8.frontend"
         minSdk = 29
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
     }
 
     packaging {
