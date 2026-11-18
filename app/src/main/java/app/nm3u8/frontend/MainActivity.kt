@@ -297,13 +297,29 @@ class MainActivity : Activity() {
             appendLog("FFmpeg launcher or the actual mp4decrypt executable is missing/not executable in Android nativeLibraryDir.")
             return
         }
+        val mp4decryptPath = mp4decrypt.canonicalPath
+        if (!File(mp4decryptPath).isFile || !File(mp4decryptPath).canExecute()) {
+            appendLog("mp4decrypt preflight failed: $mp4decryptPath")
+            return
+        }
         val args = mutableListOf(binary.absolutePath, url)
         args.addAll(effectiveArgs)
-        args.addAll(listOf("--save-dir", downloadDir.absolutePath, "--ffmpeg-binary-path", ffmpeg.absolutePath, "--decryption-engine", "MP4DECRYPT", "--decryption-binary-path", mp4decrypt.absolutePath, "--no-log", "--ui-language", "en-US"))
+        // Use --option=value tokens so System.CommandLine receives the binary path
+        // as the option value even when the positional manifest URL and user args
+        // are present. The upstream engine only searches PATH when this option is null.
+        args.addAll(listOf(
+            "--save-dir=${downloadDir.absolutePath}",
+            "--ffmpeg-binary-path=${ffmpeg.absolutePath}",
+            "--decryption-engine=MP4DECRYPT",
+            "--decryption-binary-path=$mp4decryptPath",
+            "--no-log",
+            "--ui-language=en-US"
+        ))
 
         runButton.isEnabled = false
         stopButton.isEnabled = true
         appendLog("\nStarting download… (key values are hidden)")
+        appendLog("Configured mp4decrypt executable: $mp4decryptPath")
         executor.execute {
             try {
                 val builder = ProcessBuilder(args).directory(nativeDir).redirectErrorStream(true)
