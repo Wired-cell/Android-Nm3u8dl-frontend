@@ -7,9 +7,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
 import android.text.InputType
-import android.text.method.PasswordTransformationMethod
 import android.view.Gravity
-import android.view.Window
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -53,6 +51,10 @@ class MainActivity : Activity() {
                 val ffmpeg = File(nativeDir, "ffmpeg")
                 if (!ffmpeg.exists() || !ffmpeg.canExecute()) {
                     throw IllegalStateException("Bundled ARM64 FFmpeg is missing or not executable: ${ffmpeg.absolutePath}")
+                }
+                val mp4decrypt = File(nativeDir, "mp4decrypt")
+                if (!mp4decrypt.exists() || !mp4decrypt.canExecute()) {
+                    throw IllegalStateException("Bundled ARM64 mp4decrypt is missing or not executable: ${mp4decrypt.absolutePath}")
                 }
                 val check = ProcessBuilder(binary.absolutePath, "--version")
                     .directory(nativeDir).redirectErrorStream(true).start()
