@@ -13,10 +13,11 @@ USER-REPORTED ERRORS
     Change made: Added a dedicated FFmpeg launcher that resets LD_LIBRARY_PATH to the native-library directory so the app-private OpenSSL 3 folder is not exposed to FFmpeg/system libraries.
     Verification: Source/workflow checks added. Requires successful CI build and Android-device smoke test before marking fully resolved.
 
-[ ] 3. Download start: "mp4decrypt not found".
-    Cause addressed: The app passed the mp4decrypt launcher path instead of the actual Bento4 executable to N_m3u8DL-RE.
-    Change made: Pass the packaged, executable libmp4decrypt.so directly with --decryption-engine MP4DECRYPT and --decryption-binary-path; preflight the actual executable with --help. Keep the launcher out of the downloader's configured path.
-    Verification: Source updated. Requires successful CI build and Android-device download test before marking fully resolved.
+[ ] 3. Download start: "mp4decrypt not found" (reproduced by the user's latest 1.4.9 log).
+    Previous attempted fix: Passing libmp4decrypt.so as a separate --decryption-binary-path argument did NOT resolve the error. Do not count that attempt as fixed.
+    Root-cause finding from upstream Program.cs: the generic "mp4decrypt not found" message is thrown only when DecryptionBinaryPath is null/empty and PATH lookup fails. If a supplied path is non-empty but missing, upstream throws FileNotFoundException containing that actual path instead. Therefore the latest log strongly indicates the binary-path option is not reaching/binding in the engine.
+    Change made in 1.5.0: Pass --decryption-engine=MP4DECRYPT and --decryption-binary-path=<canonical absolute path> as single argv tokens using System.CommandLine's --option=value form. Add a visible diagnostic line showing the exact configured mp4decrypt path before launch. Keep the real executable (not the launcher) as the configured binary.
+    Verification: Code committed; not yet verified by CI or on an Android device. Require CI APK verification and a real encrypted MPD download test before marking resolved.
 
 OTHER FIXES / REGRESSION GUARDS
 
@@ -24,6 +25,7 @@ OTHER FIXES / REGRESSION GUARDS
 [ ] Keep OpenSSL runtime smoke test passing (current user log reported version=0x30300030).
 [ ] Keep FFmpeg preflight and actual download FFmpeg path consistent.
 [ ] Keep Bento4 mp4decrypt packaged as an AArch64 executable and preflight the same path used by the downloader.
+[ ] Confirm the engine log shows the canonical configured mp4decrypt path (and not the generic PATH-search failure) on-device.
 [ ] Keep APK verification checking all required ARM64 binaries and shared libraries.
 [ ] Run CI after every repository change; inspect failed job steps/logs and update this tracker.
 [ ] Do not mark a runtime issue resolved from source inspection or APK packaging alone; require a device test.
