@@ -22,7 +22,7 @@ class MainActivity : Activity() {
     private val executor = Executors.newSingleThreadExecutor()
     private var process: Process? = null
     private lateinit var urlInput: EditText
-    private lateinit var keysInput: EditText
+    private lateinit var argumentsInput: EditText
     private lateinit var output: TextView
     private lateinit var runButton: Button
     private lateinit var stopButton: Button
@@ -94,12 +94,13 @@ class MainActivity : Activity() {
         })
 
         urlInput = field(content, "MPD / playlist URL", "https://example.com/manifest.mpd")
-        keysInput = field(content, "Decryption keys (one per line)", "KID:KEY", true).apply {
+        argumentsInput = field(content, "Arguments", "--key \"KID:KEY\"\n-sv res=\"^1920x\":for=best", true).apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            transformationMethod = PasswordTransformationMethod.getInstance()
+            minLines = 4
+            maxLines = 8
         }
         content.addView(TextView(this).apply {
-            text = "Paste each legally obtained KID:KEY pair on its own line. HTTP headers are optional and are not required for a public MPD."
+            text = "Enter normal N_m3u8DL-RE options here; quotes are supported. Example: --key \"KID:KEY\". Quality: -sv best (best available), -sv res=\"^1920x\":for=best (1080p), or -sv res=\"^3840x\":for=best (4K). Add --auto-select to choose best audio/subtitles too. HTTP headers are only needed when the server requires them."
             textSize = 12f
             setTextColor(0xFFBFBFBF.toInt())
             setPadding(0, dp(4), 0, dp(16))
@@ -184,16 +185,25 @@ class MainActivity : Activity() {
             return
         }
 
-        val suppliedKeys = keysInput.text.toString().lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
-        if (suppliedKeys.any { it.any(Char::isWhitespace) || it.count { c -> c == ':' } > 1 || it.startsWith(":") || it.endsWith(":") }) {
-            appendLog("Invalid key format. Enter one KID:KEY pair per line.")
+        val userArgs = try { parseArguments(argumentsInput.text.toString()) } catch (e: IllegalArgumentException) {
+            appendLog("Arguments error: ${e.message}")
+            return
+        }
+        if (userArgs.any { it == url || it.startsWith("http://") || it.startsWith("https://") }) {
+            appendLog("Put the manifest URL in the URL field, not in Arguments.")
             return
         }
 
         downloadDir.deleteRecursively()
         downloadDir.mkdirs()
-        val args = mutableListOf(binary.absolutePath, url, "--save-dir", downloadDir.absolutePath, "--ui-language", "en-US", "--no-log")
-        suppliedKeys.forEach { key -> args.add("--key"); args.add(key) }
+        val mp4decrypt = File(nativeDir, "mp4decrypt")
+        if (!mp4decrypt.exists() || !mp4decrypt.canExecute()) {
+            appendLog("Bundled mp4decrypt is missing. Reinstall the latest APK.")
+            return
+        }
+        val args = mutableListOf(binary.absolutePath, url)
+        args.addAll(userArgs)
+        args.addAll(listOf("--save-dir", downloadDir.absolutePath, "--decryption-binary-path", mp4decrypt.absolutePath, "--no-log", "--ui-language", "en-US"))
 
         runButton.isEnabled = false
         stopButton.isEnabled = true
@@ -223,6 +233,24 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun parseArguments(raw: String): List<String> {
+        val result = mutableListOf<String>()
+        val token = StringBuilder()
+        var quote: Char? = null
+        var started = false
+        for (ch in raw) {
+            if (quote != null) {
+                if (ch == quote) quote = null else token.append(ch)
+            } else when {
+                ch == '"' || ch == '\'' -> { quote = ch; started = true }
+                ch.isWhitespace() -> if (started) { result.add(token.toString()); token.setLength(0); started = false }
+                else -> { token.append(ch); started = true }
+            }
+        }
+        if (quote != null) throw IllegalArgumentException("Unclosed quote.")
+        if (started) result.add(token.toString())
+        return result
+    }
     private fun publishDownloads(root: File): Int {
         if (!root.exists()) return 0
         var published = 0
