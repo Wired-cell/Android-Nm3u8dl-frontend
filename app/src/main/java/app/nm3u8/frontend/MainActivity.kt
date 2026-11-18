@@ -344,6 +344,10 @@ class MainActivity : Activity() {
 
         downloadDir.deleteRecursively()
         downloadDir.mkdirs()
+        val engineTmpDir = File(cacheDir, "n_m3u8dl_tmp").apply {
+            deleteRecursively()
+            mkdirs()
+        }
         val ffmpeg = File(applicationInfo.nativeLibraryDir, "libffmpeg-launcher.so")
         val mp4decrypt = File(applicationInfo.nativeLibraryDir, "libmp4decrypt.so")
         if (!ffmpeg.canExecute() || !mp4decrypt.canExecute()) {
@@ -365,6 +369,7 @@ class MainActivity : Activity() {
         // symlink named "mp4decrypt" above is the compatibility path it actually finds.
         args.addAll(listOf(
             "--save-dir=${downloadDir.absolutePath}",
+            "--tmp-dir=${engineTmpDir.absolutePath}",
             "--ffmpeg-binary-path=${ffmpeg.absolutePath}",
             "--decryption-engine=MP4DECRYPT",
             "--decryption-binary-path=$mp4decryptPath",
