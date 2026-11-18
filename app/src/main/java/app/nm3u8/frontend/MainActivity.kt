@@ -1,6 +1,13 @@
 package app.nm3u8.frontend
 
 import android.app.Activity
+import android.Manifest
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.os.Build
 import android.content.ContentValues
 import android.graphics.Typeface
 import android.net.Uri
@@ -20,7 +27,7 @@ import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
     private val executor = Executors.newSingleThreadExecutor()
-    private var process: Process? = null
+    private var receiverRegistered = false
     private lateinit var urlInput: EditText
     private lateinit var argumentsInput: EditText
     private lateinit var qualitySpinner: Spinner
@@ -44,6 +51,7 @@ class MainActivity : Activity() {
         nativeDir = File(filesDir, "native")
         downloadDir = File(getExternalFilesDir(null), "download-staging/N_m3u8DL-RE")
         buildUi()
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 4101)
         executor.execute {
             try {
                 installNativePayload()
@@ -128,6 +136,35 @@ class MainActivity : Activity() {
         }
     }
 
+    private val downloadReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                DownloadService.ACTION_LOG -> intent.getStringExtra(DownloadService.EXTRA_LINE)?.let { appendLog(it) }
+                DownloadService.ACTION_FINISHED -> {
+                    appendLog(intent.getStringExtra(DownloadService.EXTRA_LINE).orEmpty())
+                    runButton.isEnabled = true
+                    stopButton.isEnabled = false
+                }
+                DownloadService.ACTION_STATE -> { runButton.isEnabled = false; stopButton.isEnabled = true }
+            }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val filter = IntentFilter().apply {
+            addAction(DownloadService.ACTION_LOG); addAction(DownloadService.ACTION_FINISHED); addAction(DownloadService.ACTION_STATE)
+        }
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(downloadReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        else registerReceiver(downloadReceiver, filter)
+        receiverRegistered = true
+    }
+
+    override fun onStop() {
+        if (receiverRegistered) { unregisterReceiver(downloadReceiver); receiverRegistered = false }
+        super.onStop()
+    }
+
     private fun buildUi() {
         val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -198,7 +235,7 @@ class MainActivity : Activity() {
         stopButton = Button(this).apply {
             text = "Stop"
             isEnabled = false
-            setOnClickListener { process?.destroy() }
+            setOnClickListener { startService(Intent(this@MainActivity, DownloadService::class.java).setAction(DownloadService.ACTION_STOP)) }
         }
         buttons.addView(runButton, LinearLayout.LayoutParams(0, dp(52), 1f))
         buttons.addView(stopButton, LinearLayout.LayoutParams(0, dp(52), 1f).apply { leftMargin = dp(10) })
@@ -337,32 +374,23 @@ class MainActivity : Activity() {
 
         runButton.isEnabled = false
         stopButton.isEnabled = true
-        appendLog("\nStarting download… (key values are hidden)")
+        appendLog("\nStarting download in background… (key values are hidden)")
         appendLog("mp4decrypt engine lookup: ${mp4decryptLookup.absolutePath} -> $mp4decryptPath")
-        executor.execute {
-            try {
-                val builder = ProcessBuilder(args).directory(nativeDir).redirectErrorStream(true)
-                val environment = builder.environment()
-                environment["HOME"] = filesDir.absolutePath
-                environment["TMPDIR"] = cacheDir.absolutePath
-                environment["PATH"] = "${applicationInfo.nativeLibraryDir}:${nativeDir.absolutePath}:${environment["PATH"].orEmpty()}"
-                // Prefer the matching OpenSSL libraries shipped with the Android Bionic engine.
-                environment["LD_LIBRARY_PATH"] = "${applicationInfo.nativeLibraryDir}:${nativeDir.absolutePath}:${environment["LD_LIBRARY_PATH"].orEmpty()}"
-                process = builder.start()
-                process!!.inputStream.bufferedReader().useLines { lines ->
-                    lines.forEach { line -> runOnUiThread { appendLog(line) } }
-                }
-                val code = process!!.waitFor()
-                if (code == 0) {
-                    val count = publishDownloads(downloadDir)
-                    runOnUiThread { appendLog("Finished. Published $count file(s) to Downloads/N_m3u8DL-RE.") }
-                } else {
-                    runOnUiThread { appendLog("Downloader exited with code $code. No files were published.") }
-                }
-                runOnUiThread { runButton.isEnabled = true; stopButton.isEnabled = false; process = null }
-            } catch (e: Exception) {
-                runOnUiThread { appendLog("Run failed: ${e.message}"); runButton.isEnabled = true; stopButton.isEnabled = false; process = null }
-            }
+        val serviceIntent = Intent(this, DownloadService::class.java).apply {
+            action = DownloadService.ACTION_START
+            putStringArrayListExtra(DownloadService.EXTRA_ARGS, ArrayList(args))
+            putExtra(DownloadService.EXTRA_WORK_DIR, nativeDir.absolutePath)
+            putExtra(DownloadService.EXTRA_HOME, filesDir.absolutePath)
+            putExtra(DownloadService.EXTRA_TMP, cacheDir.absolutePath)
+            putExtra(DownloadService.EXTRA_NATIVE_DIR, applicationInfo.nativeLibraryDir)
+            putExtra(DownloadService.EXTRA_DOWNLOAD_DIR, downloadDir.absolutePath)
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(serviceIntent) else startService(serviceIntent)
+        } catch (e: Exception) {
+            appendLog("Could not start background download service: ${e.message}")
+            runButton.isEnabled = true
+            stopButton.isEnabled = false
         }
     }
 
@@ -455,7 +483,6 @@ class MainActivity : Activity() {
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
     override fun onDestroy() {
-        process?.destroy()
         executor.shutdownNow()
         super.onDestroy()
     }
