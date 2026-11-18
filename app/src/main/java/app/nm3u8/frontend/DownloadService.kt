@@ -103,9 +103,20 @@ class DownloadService : Service() {
             running = null
             if (stopping) finish("Download stopped.", false)
             else if (code == 0) {
-                val count = publishDownloads(output)
-                finish("Download complete. Published $count file(s) to Downloads/N_m3u8DL-RE.", true)
-            } else finish("Downloader exited with code $code. No files were published.", false)
+                val mediaFiles = findMediaFiles(output)
+                if (mediaFiles.isEmpty()) {
+                    val entries = output.walkTopDown().filter { it.isFile }
+                        .take(12).joinToString { "${it.name} (${it.length()} bytes)" }
+                        .ifEmpty { "directory is empty" }
+                    finish(
+                        "Download FAILED: engine exited with code 0 but produced no media files. Output: ${output.absolutePath}. Found: $entries. The manifest was parsed, but segment download did not complete.",
+                        false
+                    )
+                } else {
+                    val count = publishDownloads(mediaFiles, output)
+                    finish("Download complete. Published $count media file(s) to Downloads/N_m3u8DL-RE.", true)
+                }
+            } else finish("Downloader exited with code $code. No files were published. Output directory: ${output.absolutePath}", false)
         } catch (e: Exception) {
             finish("Download failed: ${e.message ?: e.javaClass.simpleName}", false)
         }
@@ -161,10 +172,17 @@ class DownloadService : Service() {
         stopSelf()
     }
 
-    private fun publishDownloads(root: File): Int {
-        if (!root.exists()) return 0
+    private fun findMediaFiles(root: File): List<File> {
+        if (!root.exists()) return emptyList()
+        val mediaExtensions = setOf("mp4", "m4v", "mkv", "ts", "m4s", "mpg", "mpeg", "m4a", "mp3", "aac", "ac3", "eac3", "webm", "vtt", "srt")
+        return root.walkTopDown().filter {
+            it.isFile && it.length() > 0L && it.extension.lowercase() in mediaExtensions
+        }.toList()
+    }
+
+    private fun publishDownloads(files: List<File>, root: File): Int {
         var published = 0
-        for (file in root.walkTopDown().filter { it.isFile }.toList()) {
+        for (file in files) {
             val relativeParent = file.parentFile?.relativeTo(root)?.path?.takeIf { it.isNotEmpty() }
             val folder = if (relativeParent == null) "Download/N_m3u8DL-RE/" else "Download/N_m3u8DL-RE/$relativeParent/"
             val mime = when (file.extension.lowercase()) {
