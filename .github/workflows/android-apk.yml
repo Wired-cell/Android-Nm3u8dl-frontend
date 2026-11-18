@@ -61,7 +61,7 @@ jobs:
           TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
           export ANDROID_NDK_ROOT="$NDK"
           export PATH="$TOOLCHAIN:$PATH"
-          mkdir -p .openssl-src
+          mkdir -p .openssl-src app/src/main/assets/native
           curl --fail --location --retry 3 --retry-all-errors https://www.openssl.org/source/openssl-3.3.3.tar.gz -o /tmp/openssl.tar.gz
           tar -xzf /tmp/openssl.tar.gz -C .openssl-src --strip-components=1
           cd .openssl-src
@@ -69,29 +69,21 @@ jobs:
           make -j2
           make install_sw
           cd "$GITHUB_WORKSPACE"
-          mkdir -p app/src/main/jniLibs/arm64-v8a
           SSL_LIB="$(find .openssl-install -type f -name 'libssl.so*' | head -n 1)"
           CRYPTO_LIB="$(find .openssl-install -type f -name 'libcrypto.so*' | head -n 1)"
           test -n "$SSL_LIB"
           test -n "$CRYPTO_LIB"
-          cp "$SSL_LIB" app/src/main/jniLibs/arm64-v8a/libssl.so
-          cp "$SSL_LIB" app/src/main/jniLibs/arm64-v8a/libssl.so.3
-          cp "$CRYPTO_LIB" app/src/main/jniLibs/arm64-v8a/libcrypto.so
-          cp "$CRYPTO_LIB" app/src/main/jniLibs/arm64-v8a/libcrypto.so.3
-          readelf -h app/src/main/jniLibs/arm64-v8a/libssl.so | grep -q 'AArch64'
-          readelf -h app/src/main/jniLibs/arm64-v8a/libcrypto.so | grep -q 'AArch64'
-          ls -lh app/src/main/jniLibs/arm64-v8a/libssl.so app/src/main/jniLibs/arm64-v8a/libcrypto.so
-
-      - name: Patch engine library search path
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y patchelf
-          patchelf --set-rpath '$ORIGIN' app/src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so
-          echo "Engine dynamic section:"
-          readelf -d app/src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so | grep -E 'NEEDED|RPATH|RUNPATH' || true
-          readelf -d app/src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so | grep -q '\$ORIGIN'
+          # The .NET NativeAOT executable resolves OpenSSL through LD_LIBRARY_PATH.
+          # That path is the app-private files/native directory, populated from assets/native.
+          install -m 644 "$SSL_LIB" app/src/main/assets/native/libssl.so
+          install -m 644 "$SSL_LIB" app/src/main/assets/native/libssl.so.3
+          install -m 644 "$CRYPTO_LIB" app/src/main/assets/native/libcrypto.so
+          install -m 644 "$CRYPTO_LIB" app/src/main/assets/native/libcrypto.so.3
+          readelf -h app/src/main/assets/native/libssl.so | grep -q 'AArch64'
+          readelf -h app/src/main/assets/native/libcrypto.so | grep -q 'AArch64'
+          readelf -d app/src/main/assets/native/libssl.so | grep -E 'SONAME.*libssl'
+          readelf -d app/src/main/assets/native/libcrypto.so | grep -E 'SONAME.*libcrypto'
+          ls -lh app/src/main/assets/native/libssl.so* app/src/main/assets/native/libcrypto.so*
 
       - name: Download static Android ARM64 FFmpeg
         shell: bash
@@ -138,6 +130,12 @@ jobs:
       - name: Verify Android ARM64 executable payload
         run: |
           test -s app/src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so
+          test -s app/src/main/assets/native/libssl.so
+          test -s app/src/main/assets/native/libssl.so.3
+          test -s app/src/main/assets/native/libcrypto.so
+          test -s app/src/main/assets/native/libcrypto.so.3
+          readelf -h app/src/main/assets/native/libssl.so | grep -q 'AArch64'
+          readelf -h app/src/main/assets/native/libcrypto.so | grep -q 'AArch64'
           readelf -h app/src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so | grep -E 'Class:|Machine:'
           readelf -h app/src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so | grep -q 'AArch64'
           test -x app/src/main/assets/native/ffmpeg
@@ -155,8 +153,8 @@ jobs:
           test -s "${APK}"
           $ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/aapt dump badging "${APK}" | grep "package:"
           unzip -l "${APK}" | grep 'lib/arm64-v8a/libN_m3u8DL-RE.so'
-          unzip -l "${APK}" | grep 'lib/arm64-v8a/libssl.so'
-          unzip -l "${APK}" | grep 'lib/arm64-v8a/libcrypto.so'
+          unzip -l "${APK}" | grep 'assets/native/libssl.so'
+          unzip -l "${APK}" | grep 'assets/native/libcrypto.so'
           unzip -l "${APK}" | grep 'assets/native/ffmpeg'
           unzip -l "${APK}" | grep 'assets/native/mp4decrypt'
 
