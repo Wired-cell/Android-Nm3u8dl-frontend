@@ -9,10 +9,16 @@ android {
 
     defaultConfig {
         applicationId = "app.nm3u8.frontend"
-        minSdk = 26
+        minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
 
     buildTypes {
@@ -31,8 +37,8 @@ android {
 
 tasks.register("verifyArm64Payload") {
     doLast {
-        val binary = file("src/main/assets/native/N_m3u8DL-RE")
-        if (!binary.exists()) throw GradleException("Missing Android Bionic N_m3u8DL-RE payload. Run the prepare-native workflow step.")
+        val binary = file("src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so")
+        if (!binary.exists()) throw GradleException("Missing ARM64 executable in jniLibs. Run the prepare-native workflow step.")
     }
 }
 tasks.named("preBuild").configure { dependsOn("verifyArm64Payload") }
