@@ -36,7 +36,7 @@ jobs:
           VERSION="v0.6.0-beta"
           ASSET="N_m3u8DL-RE_v0.6.0-beta_android-bionic-arm64_20260629.tar.gz"
           URL="https://github.com/nilaoda/N_m3u8DL-RE/releases/download/${VERSION}/${ASSET}"
-          mkdir -p app/src/main/assets/native .native-unpack
+          mkdir -p app/src/main/assets/native app/src/main/jniLibs/arm64-v8a .native-unpack
           curl --fail --location --retry 3 --retry-all-errors "${URL}" -o /tmp/nm3u8dl-android-arm64.tar.gz
           tar -xzf /tmp/nm3u8dl-android-arm64.tar.gz -C .native-unpack
           BINARY="$(find .native-unpack -type f -name 'N_m3u8DL-RE' -print -quit)"
@@ -45,24 +45,30 @@ jobs:
             tar -tzf /tmp/nm3u8dl-android-arm64.tar.gz | head -100
             exit 1
           fi
+          cp "${BINARY}" app/src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so
+          chmod 755 app/src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so
           cp -a "$(dirname "${BINARY}")"/. app/src/main/assets/native/
-          chmod 755 app/src/main/assets/native/N_m3u8DL-RE
-          echo "Bundled upstream Android ARM64 engine:"
-          find app/src/main/assets/native -maxdepth 2 -type f -printf '%P (%s bytes)\n' | sort
-          file app/src/main/assets/native/N_m3u8DL-RE
+          rm -f app/src/main/assets/native/N_m3u8DL-RE
+          echo "Bundled executable:"
+          ls -l app/src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so
+          file app/src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so
 
       - name: Verify Android ARM64 executable payload
         run: |
-          test -s app/src/main/assets/native/N_m3u8DL-RE
-          readelf -h app/src/main/assets/native/N_m3u8DL-RE | grep -E 'Class:|Machine:'
+          test -s app/src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so
+          readelf -h app/src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so | grep -E 'Class:|Machine:'
+          readelf -h app/src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so | grep -q 'AArch64'
 
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
 
       - name: Verify APK
         run: |
-          test -s app/build/outputs/apk/debug/app-debug.apk
-          $ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/aapt dump badging app/build/outputs/apk/debug/app-debug.apk | grep "package:"
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "${APK}"
+          $ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/aapt dump badging "${APK}" | grep "package:"
+          unzip -l "${APK}" | grep 'lib/arm64-v8a/libN_m3u8DL-RE.so'
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
