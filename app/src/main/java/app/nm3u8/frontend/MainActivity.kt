@@ -50,6 +50,10 @@ class MainActivity : Activity() {
                 if (!binary.exists() || !binary.canExecute()) {
                     throw IllegalStateException("ARM64 engine was not extracted as an executable native library: ${binary.absolutePath}")
                 }
+                val ffmpeg = File(nativeDir, "ffmpeg")
+                if (!ffmpeg.exists() || !ffmpeg.canExecute()) {
+                    throw IllegalStateException("Bundled ARM64 FFmpeg is missing or not executable: ${ffmpeg.absolutePath}")
+                }
                 val check = ProcessBuilder(binary.absolutePath, "--version")
                     .directory(nativeDir).redirectErrorStream(true).start()
                 val version = check.inputStream.bufferedReader().use { it.readText() }.trim()
@@ -188,7 +192,7 @@ class MainActivity : Activity() {
 
         downloadDir.deleteRecursively()
         downloadDir.mkdirs()
-        val args = mutableListOf(binary.absolutePath, url, "--save-dir", downloadDir.absolutePath, "--ui-language", "en-US")
+        val args = mutableListOf(binary.absolutePath, url, "--save-dir", downloadDir.absolutePath, "--ui-language", "en-US", "--no-log")
         suppliedKeys.forEach { key -> args.add("--key"); args.add(key) }
 
         runButton.isEnabled = false
@@ -197,8 +201,10 @@ class MainActivity : Activity() {
         executor.execute {
             try {
                 val builder = ProcessBuilder(args).directory(nativeDir).redirectErrorStream(true)
-                builder.environment()["HOME"] = filesDir.absolutePath
-                builder.environment()["TMPDIR"] = cacheDir.absolutePath
+                val environment = builder.environment()
+                environment["HOME"] = filesDir.absolutePath
+                environment["TMPDIR"] = cacheDir.absolutePath
+                environment["PATH"] = "${nativeDir.absolutePath}:${environment["PATH"].orEmpty()}"
                 process = builder.start()
                 process!!.inputStream.bufferedReader().useLines { lines ->
                     lines.forEach { line -> runOnUiThread { appendLog(line) } }
