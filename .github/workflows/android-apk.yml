@@ -72,7 +72,30 @@ jobs:
           fi
           install -m 755 "${FFMPEG}" app/src/main/assets/native/ffmpeg
           readelf -h app/src/main/assets/native/ffmpeg | grep -q 'AArch64'
+          test -x app/src/main/assets/native/mp4decrypt
+          readelf -h app/src/main/assets/native/mp4decrypt | grep -q 'AArch64'
           ls -lh app/src/main/assets/native/ffmpeg
+
+      - name: Build Bento4 mp4decrypt for Android ARM64
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/axiomatic-systems/Bento4.git .bento4
+          NDK="$(find "$ANDROID_HOME/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          test -f "$NDK/build/cmake/android.toolchain.cmake"
+          cmake -S .bento4 -B .bento4/build-android \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-29 \
+            -DANDROID_STL=c++_static \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_APPS=ON
+          cmake --build .bento4/build-android --target mp4decrypt --parallel 2
+          MP4DECRYPT="$(find .bento4/build-android -type f -name mp4decrypt -print -quit)"
+          test -n "$MP4DECRYPT"
+          install -m 755 "$MP4DECRYPT" app/src/main/assets/native/mp4decrypt
+          readelf -h app/src/main/assets/native/mp4decrypt | grep -q 'AArch64'
+          ls -lh app/src/main/assets/native/mp4decrypt
 
       - name: Verify Android ARM64 executable payload
         run: |
@@ -93,6 +116,7 @@ jobs:
           $ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/aapt dump badging "${APK}" | grep "package:"
           unzip -l "${APK}" | grep 'lib/arm64-v8a/libN_m3u8DL-RE.so'
           unzip -l "${APK}" | grep 'assets/native/ffmpeg'
+          unzip -l "${APK}" | grep 'assets/native/mp4decrypt'
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
