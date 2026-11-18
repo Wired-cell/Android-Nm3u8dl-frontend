@@ -13,17 +13,18 @@ USER-REPORTED ERRORS
     Change made: Added a dedicated FFmpeg launcher that resets LD_LIBRARY_PATH to the native-library directory so the app-private OpenSSL 3 folder is not exposed to FFmpeg/system libraries.
     Verification: Source/workflow checks added. Requires successful CI build and Android-device smoke test before marking fully resolved.
 
-[ ] 3. Download start: "mp4decrypt not found" (reproduced again by the user's 1.5.0 test).
-    Latest device evidence: The app prints a non-empty canonical path:
-      /data/app/~~ME-lXbnS68jhbmqPE2FSBQ==/app.nm3u8.frontend-NSSJuFwtxMhBI4pSs1zFFg==/lib/arm64/libmp4decrypt.so
-      Yet N_m3u8DL-RE still throws the same generic "mp4decrypt not found" exception.
-    Important correction: The earlier theory that the generic exception conclusively proves the option was not passed/bound is NOT established. The app's diagnostic proves only the Kotlin-side path value; it does not prove what the engine parsed or whether the packaged executable can be found/launched by the engine.
-    Previous attempted fixes that did NOT resolve the issue:
-      - Passing libmp4decrypt.so as separate --decryption-binary-path argument.
-      - Passing --decryption-engine=MP4DECRYPT and --decryption-binary-path=<canonical path> as single --option=value tokens.
-    Current status: Still unresolved. Do not mark fixed.
-    Next investigation required: Capture/log the exact argv array passed to ProcessBuilder (with key values redacted); check for duplicate/conflicting decryption options in user-supplied arguments; inspect the actual upstream engine option parsing and binary lookup path; verify libmp4decrypt.so exists, is executable, and passes its own --help preflight on the same device immediately before engine launch. Add an engine-side diagnostic or a controlled direct invocation to prove the effective DecryptionBinaryPath.
-    Verification required: Successful encrypted MPD download on the Android device, not merely a successful APK build.
+[ ] 3. Download start: "mp4decrypt not found" (reproduced by the user's 1.5.0 device test).
+    Root cause confirmed from the exact bundled upstream tag v0.6.0-beta:
+      - Program.CheckMediaTools() handles DecryptEngine.MP4DECRYPT by unconditionally calling GlobalUtil.FindExecutable("mp4decrypt").
+      - It ignores option.DecryptionBinaryPath entirely in that release.
+      - GlobalUtil.FindExecutable() searches Environment.CurrentDirectory, the engine directory, then PATH. The app's current directory is files/native, while the actual executable is extracted as libmp4decrypt.so into nativeLibraryDir.
+    Fix committed for 1.5.1:
+      - At startup, create files/native/mp4decrypt as a symbolic link to the executable lib/arm64/libmp4decrypt.so in nativeLibraryDir.
+      - This gives the old engine the exact filename and current-directory location it searches, while the symlink target remains on Android's executable native-library mount (not the app data noexec mount).
+      - Run --help through the symlink itself and log/verify that its canonical target is the packaged executable.
+      - Check the symlink again before starting each download.
+    Status: Source fix committed; NOT yet runtime-verified. CI build and an encrypted MPD device download are still required. If the device rejects symlink execution, next step is to patch/rebuild the engine to honor DecryptionBinaryPath rather than claim success.
+    Verification required: Successful encrypted MPD download on Android, not merely a successful APK build.
 
 OTHER FIXES / REGRESSION GUARDS
 
