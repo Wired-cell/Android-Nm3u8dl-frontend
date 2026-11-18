@@ -19,6 +19,17 @@ int main(void) {
     }
 
     dlerror();
+    void *required_symbol = dlsym(ssl, "a2d_ASN1_OBJECT");
+    const char *symbol_error = dlerror();
+    if (symbol_error || !required_symbol) {
+        fprintf(stderr, "Required OpenSSL symbol a2d_ASN1_OBJECT unavailable: %s\\n",
+                symbol_error ? symbol_error : "unknown error");
+        dlclose(ssl);
+        dlclose(crypto);
+        return 13;
+    }
+
+    dlerror();
     openssl_version_num_fn version =
         (openssl_version_num_fn)dlsym(ssl, "OpenSSL_version_num");
     const char *error = dlerror();
