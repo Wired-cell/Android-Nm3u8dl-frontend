@@ -28,6 +28,7 @@ class DownloadService : Service() {
         const val EXTRA_DOWNLOAD_DIR = "download_dir"
         const val EXTRA_LINE = "line"
         const val EXTRA_PROGRESS = "progress"
+        const val EXTRA_PROGRESS_TEXT = "progress_text"
         private const val CHANNEL_ID = "downloads"
         private const val NOTIFICATION_ID = 2401
     }
@@ -35,6 +36,10 @@ class DownloadService : Service() {
     private val worker = Executors.newSingleThreadExecutor()
     @Volatile private var running: Process? = null
     @Volatile private var stopping = false
+    @Volatile private var videoSegments = 0
+    @Volatile private var videoTotal = 0
+    @Volatile private var audioSegments = 0
+    @Volatile private var audioTotal = 0
     private lateinit var manager: NotificationManager
 
     override fun onCreate() {
@@ -77,7 +82,17 @@ class DownloadService : Service() {
 
     private fun runDownload(args: List<String>, work: File, home: String, tmp: String, native: String, output: File) {
         try {
-            val builder = ProcessBuilder(args).directory(work).redirectErrorStream(true)
+            val ptyRunner = File(native, "libpty-runner.so")
+            if (!ptyRunner.isFile || !ptyRunner.canExecute()) {
+                finish("Download failed: Android PTY runner is missing or not executable. Reinstall the complete APK.", false)
+                return
+            }
+            val command = listOf(ptyRunner.absolutePath) + args
+            videoSegments = 0
+            videoTotal = 0
+            audioSegments = 0
+            audioTotal = 0
+            val builder = ProcessBuilder(command).directory(work).redirectErrorStream(true)
             builder.environment().apply {
                 put("HOME", home)
                 put("TMPDIR", tmp)
@@ -125,15 +140,33 @@ class DownloadService : Service() {
 
     private fun publishLine(line: String) {
         val safe = if (line.contains("--key") || line.contains("KID:", true)) "[Sensitive argument output hidden]" else line
-        sendBroadcast(Intent(ACTION_LOG).setPackage(packageName).putExtra(EXTRA_LINE, safe))
-        val clean = safe.replace(Regex("\\u001B\\[[;\\d?]*[ -/]*[@-~]"), "")
-        val percent = Regex("""(?<!\d)(\d{1,3})%""").find(clean)?.groupValues?.get(1)?.toIntOrNull()?.coerceIn(0, 100)
+        val clean = safe.replace(Regex("\\u001B\\[[0-?]*[ -/]*[@-~]"), "")
+            .replace(Regex("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F]"), "")
+        sendBroadcast(Intent(ACTION_LOG).setPackage(packageName).putExtra(EXTRA_LINE, clean))
+        val segmentMatch = Regex("""(\\d+)\\s*/\\s*(\\d+)\\s+(\\d+(?:\\.\\d+)?)%""").find(clean)
+        if (segmentMatch != null) {
+            val done = segmentMatch.groupValues[1].toIntOrNull() ?: 0
+            val total = segmentMatch.groupValues[2].toIntOrNull() ?: 0
+            when {
+                clean.contains("Vid", true) -> { videoSegments = done; videoTotal = total }
+                clean.contains("Aud", true) -> { audioSegments = done; audioTotal = total }
+            }
+        }
+        val knownTotal = videoTotal + audioTotal
+        val knownDone = videoSegments + audioSegments
+        val percent = if (knownTotal > 0) ((knownDone * 100.0) / knownTotal).toInt().coerceIn(0, 100) else null
+        val progressText = buildList {
+            if (videoTotal > 0) add("Video $videoSegments/$videoTotal")
+            if (audioTotal > 0) add("Audio $audioSegments/$audioTotal")
+        }.joinToString(" · ").ifEmpty { "Waiting for segment counters…" }
         if (percent != null) sendBroadcast(Intent(ACTION_LOG).setPackage(packageName)
-            .putExtra(EXTRA_LINE, "DOWNLOAD_PROGRESS:$percent").putExtra(EXTRA_PROGRESS, percent))
+            .putExtra(EXTRA_LINE, "DOWNLOAD_PROGRESS:$percent")
+            .putExtra(EXTRA_PROGRESS, percent)
+            .putExtra(EXTRA_PROGRESS_TEXT, progressText))
         val notificationText = when {
-            safe.contains("Loading URL:", true) -> "Loading manifest…"
-            safe.contains("Signature=", true) || safe.contains("Policy=", true) || safe.contains("Key-Pair-Id=", true) -> "Processing request…"
-            percent != null -> "Downloading segments: $percent%"
+            clean.contains("Loading URL:", true) -> "Loading manifest…"
+            clean.contains("Signature=", true) || clean.contains("Policy=", true) || clean.contains("Key-Pair-Id=", true) -> "Processing request…"
+            knownTotal > 0 -> "$progressText ($percent%)"
             else -> clean.takeLast(110)
         }
         updateNotification(notificationText, percent, true)
