@@ -163,6 +163,11 @@ jobs:
           "$CLANG" -O2 -DTARGET_BINARY='"libffmpeg.so"' /tmp/tool_launcher.c -o app/src/main/jniLibs/arm64-v8a/libffmpeg-launcher.so
           "$CLANG" -O2 -DTARGET_BINARY='"libmp4decrypt.so"' /tmp/tool_launcher.c -o app/src/main/jniLibs/arm64-v8a/libmp4decrypt-launcher.so
           chmod 755 app/src/main/jniLibs/arm64-v8a/libffmpeg-launcher.so app/src/main/jniLibs/arm64-v8a/libmp4decrypt-launcher.so
+          # Run the .NET engine under a real Android PTY so Spectre.Console
+          # detects an interactive terminal and emits its native live progress frames.
+          "$CLANG" -O2 -Wall -Wextra app/src/main/cpp/pty_runner.c -o app/src/main/jniLibs/arm64-v8a/libpty-runner.so
+          chmod 755 app/src/main/jniLibs/arm64-v8a/libpty-runner.so
+          readelf -h app/src/main/jniLibs/arm64-v8a/libpty-runner.so | grep -q 'AArch64'
           for f in app/src/main/jniLibs/arm64-v8a/libffmpeg-launcher.so app/src/main/jniLibs/arm64-v8a/libmp4decrypt-launcher.so; do
             readelf -h "$f" | grep -q 'AArch64'
             readelf -d "$f" | grep -q 'NEEDED.*libc.so'
@@ -205,6 +210,7 @@ jobs:
           test -x app/src/main/jniLibs/arm64-v8a/libffmpeg.so
           test -x app/src/main/jniLibs/arm64-v8a/libffmpeg-launcher.so
           test -x app/src/main/jniLibs/arm64-v8a/libmp4decrypt-launcher.so
+          test -x app/src/main/jniLibs/arm64-v8a/libpty-runner.so
           test -s 'app/src/main/jniLibs/arm64-v8a/libc++_shared.so'
           readelf -h app/src/main/jniLibs/arm64-v8a/libffmpeg.so | grep -q 'AArch64'
           readelf -h app/src/main/jniLibs/arm64-v8a/libc++_shared.so | grep -q 'AArch64'
@@ -230,6 +236,7 @@ jobs:
           unzip -l "${APK}" | grep 'lib/arm64-v8a/libmp4decrypt-launcher.so'
           unzip -l "${APK}" | grep 'lib/arm64-v8a/libc++_shared.so'
           unzip -l "${APK}" | grep 'lib/arm64-v8a/libmp4decrypt.so'
+          unzip -l "${APK}" | grep 'lib/arm64-v8a/libpty-runner.so'
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
