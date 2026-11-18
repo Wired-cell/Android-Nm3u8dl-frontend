@@ -128,6 +128,46 @@ jobs:
           readelf -d app/src/main/jniLibs/arm64-v8a/libc++_shared.so | grep -E 'SONAME.*libc\+\+_shared.so'
           ls -lh app/src/main/jniLibs/arm64-v8a/libffmpeg.so app/src/main/jniLibs/arm64-v8a/libc++_shared.so
 
+      - name: Build isolated native tool launchers
+        shell: bash
+        run: |
+          set -euo pipefail
+          NDK="$(find "$ANDROID_HOME/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          CLANG="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang"
+          cat > /tmp/tool_launcher.c <<'EOF'
+          #define _GNU_SOURCE
+          #include <errno.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <string.h>
+          #include <unistd.h>
+          #ifndef TARGET_BINARY
+          #error TARGET_BINARY must be defined
+          #endif
+          int main(int argc, char **argv) {
+              char dir[4096], target[4096];
+              const char *slash = strrchr(argv[0], '/');
+              if (!slash) return 120;
+              size_t n = (size_t)(slash - argv[0]);
+              if (n == 0 || n >= sizeof(dir)) return 121;
+              memcpy(dir, argv[0], n);
+              dir[n] = '\0';
+              if (snprintf(target, sizeof(target), "%s/%s", dir, TARGET_BINARY) >= (int)sizeof(target)) return 122;
+              if (setenv("LD_LIBRARY_PATH", dir, 1) != 0) return 123;
+              argv[0] = target;
+              execv(target, argv);
+              fprintf(stderr, "execv %s failed: %s\n", target, strerror(errno));
+              return 127;
+          }
+          EOF
+          "$CLANG" -O2 -DTARGET_BINARY='"libffmpeg.so"' /tmp/tool_launcher.c -o app/src/main/jniLibs/arm64-v8a/libffmpeg-launcher.so
+          "$CLANG" -O2 -DTARGET_BINARY='"libmp4decrypt.so"' /tmp/tool_launcher.c -o app/src/main/jniLibs/arm64-v8a/libmp4decrypt-launcher.so
+          chmod 755 app/src/main/jniLibs/arm64-v8a/libffmpeg-launcher.so app/src/main/jniLibs/arm64-v8a/libmp4decrypt-launcher.so
+          for f in app/src/main/jniLibs/arm64-v8a/libffmpeg-launcher.so app/src/main/jniLibs/arm64-v8a/libmp4decrypt-launcher.so; do
+            readelf -h "$f" | grep -q 'AArch64'
+            readelf -d "$f" | grep -q 'NEEDED.*libc.so'
+          done
+
       - name: Build Bento4 mp4decrypt for Android ARM64
         shell: bash
         run: |
@@ -163,6 +203,8 @@ jobs:
           readelf -h app/src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so | grep -E 'Class:|Machine:'
           readelf -h app/src/main/jniLibs/arm64-v8a/libN_m3u8DL-RE.so | grep -q 'AArch64'
           test -x app/src/main/jniLibs/arm64-v8a/libffmpeg.so
+          test -x app/src/main/jniLibs/arm64-v8a/libffmpeg-launcher.so
+          test -x app/src/main/jniLibs/arm64-v8a/libmp4decrypt-launcher.so
           test -s 'app/src/main/jniLibs/arm64-v8a/libc++_shared.so'
           readelf -h app/src/main/jniLibs/arm64-v8a/libffmpeg.so | grep -q 'AArch64'
           readelf -h app/src/main/jniLibs/arm64-v8a/libc++_shared.so | grep -q 'AArch64'
@@ -184,6 +226,8 @@ jobs:
           unzip -l "${APK}" | grep 'assets/native/libcrypto.so'
           unzip -l "${APK}" | grep 'lib/arm64-v8a/libopenssl-probe.so'
           unzip -l "${APK}" | grep 'lib/arm64-v8a/libffmpeg.so'
+          unzip -l "${APK}" | grep 'lib/arm64-v8a/libffmpeg-launcher.so'
+          unzip -l "${APK}" | grep 'lib/arm64-v8a/libmp4decrypt-launcher.so'
           unzip -l "${APK}" | grep 'lib/arm64-v8a/libc++_shared.so'
           unzip -l "${APK}" | grep 'lib/arm64-v8a/libmp4decrypt.so'
 
