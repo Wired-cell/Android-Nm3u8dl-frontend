@@ -270,6 +270,8 @@ class MainActivity : Activity() {
                 environment["HOME"] = filesDir.absolutePath
                 environment["TMPDIR"] = cacheDir.absolutePath
                 environment["PATH"] = "${nativeDir.absolutePath}:${environment["PATH"].orEmpty()}"
+                // Prefer the matching OpenSSL libraries shipped with the Android Bionic engine.
+                environment["LD_LIBRARY_PATH"] = "${nativeDir.absolutePath}:${environment["LD_LIBRARY_PATH"].orEmpty()}"
                 process = builder.start()
                 process!!.inputStream.bufferedReader().useLines { lines ->
                     lines.forEach { line -> runOnUiThread { appendLog(line) } }
