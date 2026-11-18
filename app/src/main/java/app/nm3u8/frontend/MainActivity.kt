@@ -367,6 +367,16 @@ class MainActivity : Activity() {
             }
         }
         effectiveArgs.addAll(listOf("-sa", "best"))
+        // The upstream engine defaults to a 100-second HTTP timeout. One stalled
+        // CDN segment can therefore consume ~7 minutes across the default retries.
+        // Use a shorter per-attempt timeout and more retries; allow explicit user
+        // values in Arguments to override these defaults.
+        if (effectiveArgs.none { it == "--http-request-timeout" || it.startsWith("--http-request-timeout=") }) {
+            effectiveArgs.add("--http-request-timeout=30")
+        }
+        if (effectiveArgs.none { it == "--download-retry-count" || it.startsWith("--download-retry-count=") }) {
+            effectiveArgs.add("--download-retry-count=5")
+        }
 
         downloadDir.deleteRecursively()
         downloadDir.mkdirs()
