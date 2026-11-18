@@ -126,7 +126,7 @@ class DownloadService : Service() {
     private fun publishLine(line: String) {
         val safe = if (line.contains("--key") || line.contains("KID:", true)) "[Sensitive argument output hidden]" else line
         sendBroadcast(Intent(ACTION_LOG).setPackage(packageName).putExtra(EXTRA_LINE, safe))
-        val clean = safe.replace(Regex("""\u001B\[[;\d?]*[ -/]*[@-~]"""), "")
+        val clean = safe.replace(Regex("\\u001B\\[[;\\d?]*[ -/]*[@-~]"), "")
         val percent = Regex("""(?<!\d)(\d{1,3})%""").find(clean)?.groupValues?.get(1)?.toIntOrNull()?.coerceIn(0, 100)
         if (percent != null) sendBroadcast(Intent(ACTION_LOG).setPackage(packageName)
             .putExtra(EXTRA_LINE, "DOWNLOAD_PROGRESS:$percent").putExtra(EXTRA_PROGRESS, percent))
