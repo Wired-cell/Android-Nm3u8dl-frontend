@@ -72,7 +72,6 @@ jobs:
           set -euo pipefail
           python3 scripts/fetch_dash.py encrypted.mp4
           ls -l encrypted.mp4
-          echo "--- encrypted probe (moov must be present here) ---"
           ffprobe -v error -select_streams v:0 \
             -show_entries stream=codec_name,width,height,nb_frames \
             -of default=nw=1 encrypted.mp4
