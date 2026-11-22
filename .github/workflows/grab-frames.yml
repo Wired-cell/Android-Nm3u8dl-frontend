@@ -4,9 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       video_url:
-        description: 'Signed MPD URL (signature expires — paste a fresh one)'
+        description: 'Signed MPD URL (paste a fresh one — signatures expire)'
         required: true
-        default: 'https://url1.b-cdn.net/92de350b-9af6-4b32-8177-0331ede4066b/master.mpd?Signature=1UHpkFoQ7bjHhvlf8q8j3QNO2CrlOH8UN7uJDaQEdTNn-eD5fyHHa6t8QyeV2eSaaClZvQvr5aU2%7Evrnixndg6OOfq5CKbgLXogBv3uTH2dqbkB2AdtSfvP2uET4tjAHCztMLwt8FcJ3DAVS6vxvThRE0lyL%7EkY6kAW-HZLBr0qw6sZm-YWhpkfCrU6VFeHZw54UTtNcB1hkqBgBdXjF6BNMeKHvdsSIklX7Igbolux4A902YK1mgBhzNtD-2LRh5f%7E7PQ6fn4KM%7E6qh0CxEtjrBSU6-Sd%7EHxRsV4CctUIBjl87RnfjCAHaOUK85qK8ZVzFjsrleBE10cK86TKuyUw__&Key-Pair-Id=APKAXVKMENFCRKTG5XE2&Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9kMWQzNHA4dno2M29pcS5jbG91ZGZyb250Lm5ldC85MmRlMzUwYi05YWY2LTRiMzItODE3Ny0wMzMxZWRlNDA2NmIvKiIsIkNvbmRpdGlvbiI6eyJEYXRlTGVzc1RoYW4iOnsiQVdTOkVwb2NoVGltZSI6MTc5NTMzNDMyM30sIkRhdGVHcmVhdGVyVGhhbiI6eyJBV1M6RXBvY2hUaW1lIjoxNDczMTA1NDA3fX19XX0_='
       decryption_key:
         description: 'ClearKey as kid:key (hex)'
         required: true
@@ -34,7 +33,7 @@ concurrency:
 jobs:
   grab:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       VIDEO_URL: ${{ inputs.video_url }}
       KEY: ${{ inputs.decryption_key }}
@@ -44,49 +43,53 @@ jobs:
       BENTO4_VERSION: '1-6-0-641'
 
     steps:
-      - name: Install ffmpeg, python, yt-dlp
+      - uses: actions/checkout@v4
+
+      - name: Install tooling
         run: |
+          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            ffmpeg python3 python3-pip unzip curl ca-certificates
-          python3 -m pip install --upgrade pip
-          python3 -m pip install --upgrade yt-dlp
+          sudo apt-get install -y --no-install-recommends ffmpeg python3 unzip curl ca-certificates
 
       - name: Install Bento4 (mp4decrypt)
         run: |
+          set -euo pipefail
           curl -fsSL -o bento4.zip \
             "https://www.bok.net/Bento4/binaries/Bento4-SDK-${BENTO4_VERSION}.x86_64-unknown-linux.zip"
           unzip -q bento4.zip -d bento4
           BENTO_BIN="$PWD/$(find bento4 -maxdepth 1 -type d -name 'Bento4-SDK-*')/bin"
           echo "$BENTO_BIN" >> "$GITHUB_PATH"
-          "$BENTO_BIN/mp4decrypt" --version || true
 
-      - name: List available renditions
-        run: yt-dlp --allow-u -F "$VIDEO_URL" | tee formats.txt
-
-      - name: Download encrypted stream (fragments kept)
+      - name: Inspect manifest
         run: |
-          yt-dlp --allow-u \
-            -f "bv*[height<=${MAX_HEIGHT}]/b[height<=${MAX_HEIGHT}]/bv*/b*" \
-            --downloader native --no-part --keep-fragments \
-            -o 'raw.%(ext)s' "$VIDEO_URL" 2>&1 | tee ytdlp.log
+          set -euo pipefail
+          curl -fsSL "$VIDEO_URL" -o mpd.xml
+          wc -c mpd.xml
+          head -c 3000 mpd.xml
 
-      - name: Join init + media segments
+      - name: Fetch init + segments
         run: |
-          mapfile -t FRAGS < <(ls -1 raw.*-Frag* | sort -V)
-          echo "segments: ${#FRAGS[@]}"
-          cat "${FRAGS[@]}" > encrypted.mp4
+          set -euo pipefail
+          python3 scripts/fetch_dash.py encrypted.mp4
           ls -l encrypted.mp4
-
-      - name: Decrypt with ClearKey
-        run: |
-          mp4decrypt --key "$KEY" encrypted.mp4 clear.mp4
+          echo "--- encrypted probe (moov must be present here) ---"
           ffprobe -v error -select_streams v:0 \
-            -show_entries stream=width,height,duration,nb_frames \
+            -show_entries stream=codec_name,width,height,nb_frames \
+            -of default=nw=1 encrypted.mp4
+
+      - name: Decrypt
+        run: |
+          set -euo pipefail
+          mp4decrypt --key "$KEY" encrypted.mp4 clear.mp4
+          test -s clear.mp4 || { echo "decrypt produced an empty file"; exit 1; }
+          ls -l clear.mp4
+          ffprobe -v error -select_streams v:0 \
+            -show_entries stream=codec_name,width,height -show_entries format=duration \
             -of default=nw=1 clear.mp4 | tee probe.txt
 
       - name: Extract stills
         run: |
+          set -euo pipefail
           mkdir -p shots
           ffmpeg -hide_banner -loglevel error -y -i clear.mp4 \
             -vf "fps=1/${SECONDS_BETWEEN},scale=-2:${MAX_HEIGHT}" \
@@ -94,6 +97,7 @@ jobs:
           ffmpeg -hide_banner -loglevel error -y -i 'shots/shot_%03d.jpg' \
             -vf "scale=320:-2,tile=4x3:padding=4" -frames:v 1 contact-sheet.jpg
           ls -l shots
+          test "$(ls -1 shots | wc -l)" -gt 0
 
       - name: Upload stills (not the video)
         uses: actions/upload-artifact@v4
@@ -103,6 +107,14 @@ jobs:
             shots/
             contact-sheet.jpg
             probe.txt
-            formats.txt
+            mpd.xml
           retention-days: 7
           if-no-files-found: error
+
+      - name: Diagnostics
+        if: failure()
+        run: |
+          ls -laR . | head -100
+          for f in encrypted.mp4 clear.mp4; do
+            [ -f "$f" ] && { echo "== $f $(stat -c%s "$f") bytes"; xxd "$f" | head -4; }
+          done
