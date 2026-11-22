@@ -14,15 +14,21 @@ MAX_SEGMENTS = 8000
 
 def fetch(url, tries=5):
     delay, last = 1.0, None
-    for _ in range(tries):
+    for attempt in range(tries):
         try:
             with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=90) as r:
                 return r.read()
+        except urllib.error.HTTPError as e:
+            last = e
+            if e.code in (403, 404, 410) and attempt >= 1:
+                break
+            time.sleep(delay)
+            delay *= 2
         except Exception as e:
             last = e
             time.sleep(delay)
             delay *= 2
-    raise SystemExit(f"fetch failed: {url}\n{last}")
+    raise SystemExit(f"fetch failed ({getattr(last, 'code', 'n/a')}): {url}\n{last}")
 
 
 def iso_dur(s):
@@ -45,6 +51,7 @@ def abs_url(path):
 
 
 def sub(tmpl, rep_id, bw, number=None, time_=None):
+    """Substitute every DASH placeholder. Number and Time are both filled when known."""
     out = tmpl.replace("$RepresentationID$", rep_id).replace("$Bandwidth$", str(bw))
     if number is not None:
         out = re.sub(r"\$Number(?:%0(\d+)d)?\$", lambda m: str(number).zfill(int(m.group(1) or 0)), out)
@@ -85,44 +92,55 @@ def candidates(root):
 
 
 def build(base, rep, aset, total):
-    """Return (urls, sub_manifest). urls includes the init segment first."""
+    """Return (urls, sub_manifest, single). urls always has the init segment first."""
     tmpl = rep.find("SegmentTemplate")
     if tmpl is None:
         tmpl = aset.find("SegmentTemplate")
     if tmpl is None:
         return None, (base if base.endswith(".mpd") else None), base
+
     rep_id, bw = rep.get("id", ""), rep.get("bandwidth", "")
     init, media = tmpl.get("initialization"), tmpl.get("media")
     if not media:
         raise SystemExit("SegmentTemplate without @media")
-    urls = [abs_url(sub(init, rep_id, bw))] if init else []
+    timescale = int(tmpl.get("timescale") or 1)
+    start = int(tmpl.get("startNumber") or 1)
+
+    # Build (number, time) pairs once, from whichever addressing the manifest uses.
+    pairs = []
     tl = tmpl.find("SegmentTimeline")
     if tl is not None:
-        seq, t = tl.findall("S"), 0
+        seq, t, num = tl.findall("S"), 0, start
         for i, s in enumerate(seq):
             if s.get("t") is not None:
                 t = int(s.get("t"))
             d, r = int(s.get("d") or 0), int(s.get("r") or 0)
             if r < 0:
                 nxt = seq[i + 1].get("t") if i + 1 < len(seq) else None
-                end = int(nxt) if nxt is not None else int(total * int(tmpl.get("timescale") or 1))
+                end = int(nxt) if nxt is not None else int(total * timescale)
                 n = max(1, -(-(end - t) // d)) if d else 1
             else:
                 n = r + 1
             for _ in range(n):
-                urls.append(abs_url(sub(media, rep_id, bw, time_=t)))
+                pairs.append((num, t))
+                num += 1
                 t += d
     else:
-        ts = int(tmpl.get("timescale") or 1)
         dur = int(tmpl.get("duration") or 0)
         if not dur or not total:
             raise SystemExit("no SegmentTimeline and no usable @duration/@mediaPresentationDuration")
-        n = int(-(-total * ts // dur))
-        start = int(tmpl.get("startNumber") or 1)
-        for i in range(n):
-            urls.append(abs_url(sub(media, rep_id, bw, number=start + i)))
-    if len(urls) > MAX_SEGMENTS:
-        raise SystemExit(f"too many segments ({len(urls)})")
+        for i in range(int(-(-total * timescale // dur))):
+            pairs.append((start + i, i * dur))
+
+    if len(pairs) > MAX_SEGMENTS:
+        raise SystemExit(f"too many segments ({len(pairs)})")
+
+    urls = [abs_url(sub(init, rep_id, bw))] if init else []
+    for num, t in pairs:
+        u = sub(media, rep_id, bw, number=num, time_=t)
+        if "$" in u:
+            raise SystemExit(f"unsubstituted placeholder in media template: {media!r}")
+        urls.append(abs_url(u))
     return urls, None, base
 
 
@@ -154,7 +172,7 @@ def resolve(url, depth=0):
 
 def main():
     urls = resolve(MPD)
-    print(f"segments to fetch: {len(urls)}")
+    print(f"segments to fetch: {len(urls)} (first media url: {urls[1].split('?')[0]})")
     written = 0
     with open(OUT, "wb") as fh:
         for i, u in enumerate(urls, 1):
